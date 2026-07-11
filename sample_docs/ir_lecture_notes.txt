@@ -1,0 +1,19 @@
+CS4021 Information Retrieval - Lecture 7 notes (shared by Prof. Rao's TA)
+
+Topic: term weighting and the vector space model.
+
+The raw count of a term in a document is a poor signal on its own, so we use
+tf-idf weighting. Term frequency is usually log-normalized: tf = 1 + log10 of
+the count. Inverse document frequency rewards rare terms: idf = log10(N / df),
+where N is the collection size and df is the number of documents containing
+the term. A document becomes a vector of tf-idf weights, and we score queries
+against documents with cosine similarity after L2 normalization.
+
+Contrast this with the Boolean model from lecture 3, which retrieves an
+unranked set using AND, OR and NOT over posting lists in an inverted index.
+Boolean retrieval is precise but brittle; the vector space model gives graded
+ranking. Modern systems layer probabilistic models like BM25 on top, which
+adds document length normalization and term saturation.
+
+Exam hint: be ready to compute a small tf-idf matrix by hand and to walk
+through posting list intersection step by step.

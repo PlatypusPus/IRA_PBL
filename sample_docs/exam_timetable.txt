@@ -1,0 +1,17 @@
+Autumn 2026 end-semester examination timetable (CSE, semester 7)
+Circulated by the class representative on the section group.
+
+All exams are 9:00 AM to 12:00 noon in the main examination hall unless
+stated otherwise.
+
+  17 Nov 2026  CS4021  Information Retrieval
+  19 Nov 2026  CS4013  Distributed Systems
+  21 Nov 2026  CS4032  Machine Learning        (afternoon slot, 2:00 PM)
+  24 Nov 2026  CS4044  Compiler Design
+  26 Nov 2026  HS4001  Engineering Economics
+
+Hall tickets will be issued from the department office starting 10 November.
+Students with attendance below 75 percent must collect a condonation form
+from the academic section before 5 November. Calculators are permitted only
+for Engineering Economics; no other electronic devices are allowed inside
+the examination hall.

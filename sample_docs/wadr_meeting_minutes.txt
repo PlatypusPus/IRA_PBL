@@ -1,0 +1,19 @@
+WADR project - meeting minutes, 8 July 2026, CS block seminar room
+
+Present: all four members. Duration: 45 minutes.
+
+Decisions taken:
+1. Retrieval fusion will use Reciprocal Rank Fusion with k = 60, combining
+   BM25 and dense embedding results. No score normalization tricks.
+2. Embeddings come from nomic-embed-text served by a local Ollama instance;
+   storage is PostgreSQL 16 with the pgvector extension.
+3. The WhatsApp bridge stays a thin Node process using open-wa; all retrieval
+   logic lives behind a Python interface so the engine never touches WhatsApp.
+4. Workstreams assigned as per TODO.md: integration, extractors, evaluation,
+   and query experience. Classical models (Boolean, tf-idf, inverted index)
+   are shared work because the viva will cover them line by line.
+
+Action items:
+- Everyone ingests the shared sample corpus before Friday.
+- Evaluation workstream drafts the first twenty queries with judgments.
+- Next sync: Tuesday after the DBMS quiz.
