@@ -1,0 +1,12 @@
+{
+  "name": "wadr-bridge",
+  "private": true,
+  "description": "WhatsApp <-> WADR bridge via Baileys. Contract: src/wadr/adapters/openwa.py",
+  "scripts": {
+    "start": "node --env-file-if-exists=../.env index.js"
+  },
+  "dependencies": {
+    "baileys": "^7.0.0-rc13",
+    "qrcode": "^1.5.4"
+  }
+}
