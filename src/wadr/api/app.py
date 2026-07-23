@@ -4,6 +4,7 @@ from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException
 
+from wadr.adapters.openwa import OpenWAAdapter
 from wadr.retrieval import service
 
 app = FastAPI(title="WADR")
@@ -21,12 +22,22 @@ def search(q: str, model: str = "hybrid", top_k: int = 5):
 
 
 @app.post("/webhook/openwa")
-def openwa_webhook():
-    """TODO(WS1): validate payload, call OpenWAAdapter().handle_webhook(body).
+def openwa_webhook(payload: dict):
+    """Inbound document from the bridge - payload contract in wadr/adapters/openwa.py."""
+    try:
+        return OpenWAAdapter().handle_webhook(payload)
+    except (KeyError, ValueError) as e:  # missing field, bad base64, bad timestamp
+        raise HTTPException(400, f"bad payload: {e!r}") from e
 
-    Full payload contract documented in wadr/adapters/openwa.py.
-    """
-    raise HTTPException(501, "TODO(WS1): open-wa webhook - contract in wadr/adapters/openwa.py")
+
+@app.post("/webhook/openwa/query")
+def openwa_query(payload: dict):
+    """'/find <query>' from a chat: search, reply into the same chat via bridge /send."""
+    query = payload.get("text", "").removeprefix("/find").strip()
+    if not query or "chat_id" not in payload:
+        raise HTTPException(400, "need chat_id and text '/find <query>'")
+    OpenWAAdapter().send_results(payload["chat_id"], service.search(query))
+    return {}
 
 
 @app.get("/similar/{document_id}")

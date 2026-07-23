@@ -5,6 +5,7 @@ The imports below are NOT skipped - stubs must always stay importable.
 """
 
 import base64
+import json
 
 import pytest
 
@@ -14,7 +15,6 @@ from wadr.indexing import inverted_index
 from wadr.ingestion.extractors import audio_asr, docx, image_ocr
 from wadr.retrieval import boolean_model, filters, fusion, tfidf_model
 
-WS1 = pytest.mark.skip(reason="TODO: workstream 1 (WhatsApp integration)")
 WS2 = pytest.mark.skip(reason="TODO: workstream 2 (extractors)")
 WS3 = pytest.mark.skip(reason="TODO: workstream 3 (evaluation)")
 WS4 = pytest.mark.skip(reason="TODO: workstream 4 (query experience)")
@@ -23,7 +23,6 @@ SHARED = pytest.mark.skip(reason="TODO: shared classical IR (viva-critical)")
 
 # ---------------------------------------------------------------- WS1
 
-@WS1
 def test_openwa_webhook_decodes_and_ingests():
     payload = {
         "chat_id": "123-456@g.us",
@@ -35,12 +34,18 @@ def test_openwa_webhook_decodes_and_ingests():
     }
     resp = openwa.OpenWAAdapter().handle_webhook(payload)
     assert set(resp) == {"document_id", "duplicate"}
+    # same bytes again -> a sighting on the same document, not a new one
+    again = openwa.OpenWAAdapter().handle_webhook(payload)
+    assert again == {"document_id": resp["document_id"], "duplicate": True}
 
 
-@WS1
-def test_openwa_send_results_posts_to_bridge():
-    # mock urllib/httpx: expect POST {chat_id, text} to WADR_OPENWA_BRIDGE_URL/send
+def test_openwa_send_results_posts_to_bridge(monkeypatch):
+    calls = []
+    monkeypatch.setattr(openwa.urllib.request, "urlopen", lambda req, timeout: calls.append(req))
     openwa.OpenWAAdapter().send_results("123-456@g.us", [])
+    (req,) = calls
+    assert req.full_url.endswith("/send")
+    assert json.loads(req.data) == {"chat_id": "123-456@g.us", "text": "No results."}
 
 
 # ---------------------------------------------------------------- WS2

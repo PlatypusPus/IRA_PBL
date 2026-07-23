@@ -11,12 +11,12 @@ the engine never imports adapters, and classical IR modules stay library-free.
 
 ---
 
-## WS1 — WhatsApp integration (open-wa bridge + adapter)
+## WS1 — WhatsApp integration (Baileys bridge + adapter)
 
 **Context.** WADR's engine does not know WhatsApp exists: adapters hand it raw
 bytes through `MessagingInterface.on_document()` and deliver answers with
 `send_results()`. You build the real WhatsApp channel: a small Node bridge
-using open-wa (`wa-automate-nodejs`) that owns the WhatsApp session and
+using Baileys that owns the WhatsApp session and
 forwards incoming files to our FastAPI webhook, plus the thin Python adapter
 behind it. The full HTTP contract — both directions, exact payload shapes —
 is already written in `src/wadr/adapters/openwa.py`; treat that docstring as
@@ -26,12 +26,12 @@ your spec.
 the `/webhook/openwa` routes in `src/wadr/api/app.py`.
 
 **Tasks (dependency order):**
-- [ ] Node bridge in `bridge/`: open-wa session; on document message, POST the base64 payload to `/webhook/openwa`
-- [ ] `OpenWAAdapter.handle_webhook()`: decode base64, parse ISO timestamp, call `on_document()`, return `{document_id, duplicate}`
-- [ ] Replace the 501 stub route in `api/app.py` with a real call into the adapter
-- [ ] `OpenWAAdapter.send_results()`: format results as a WhatsApp message, POST to bridge `/send`
-- [ ] Bridge forwards `/find <query>` chat messages → `/webhook/openwa/query` → search → reply in the same chat
-- [ ] Unskip the WS1 tests in `tests/test_todo_checklist.py`
+- [x] Node bridge in `bridge/`: Baileys session; on document message, POST the base64 payload to `/webhook/openwa`
+- [x] `OpenWAAdapter.handle_webhook()`: decode base64, parse ISO timestamp, call `on_document()`, return `{document_id, duplicate}`
+- [x] Replace the 501 stub route in `api/app.py` with a real call into the adapter
+- [x] `OpenWAAdapter.send_results()`: format results as a WhatsApp message, POST to bridge `/send`
+- [x] Bridge forwards `/find <query>` chat messages → `/webhook/openwa/query` → search → reply in the same chat
+- [x] Unskip the WS1 tests in `tests/test_todo_checklist.py`
 
 **Definition of done:** sending a PDF to the linked WhatsApp number creates a
 `documents` row; `/find <word>` in a chat gets a ranked reply; re-forwarding

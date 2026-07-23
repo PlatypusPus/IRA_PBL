@@ -6,3 +6,11 @@ __pycache__/
 dist/
 *.egg-info/
 .env
+node_modules/
+bridge/auth/
+
+# managed
+**.data.json
+**.node-persist**
+**_IGNORE_**
+# end managed
