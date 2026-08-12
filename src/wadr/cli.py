@@ -40,4 +40,6 @@ def main() -> None:
             results = service.search(args.query, model=args.model, top_k=args.top_k)
         except NotImplementedError as e:
             raise SystemExit(f"Model not implemented yet ({e}) - see TODO.md") from e
+        except ValueError as e:  # malformed filter token, e.g. before:soon
+            raise SystemExit(str(e)) from e
         adapter.send_results("local", results)

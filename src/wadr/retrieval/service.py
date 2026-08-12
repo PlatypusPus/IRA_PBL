@@ -7,7 +7,7 @@ import psycopg
 
 from wadr.db import get_conn
 from wadr.models import SearchResult
-from wadr.retrieval import bm25_model, boolean_model, dense_model, fusion, tfidf_model
+from wadr.retrieval import bm25_model, boolean_model, dense_model, filters, fusion, tfidf_model
 
 log = logging.getLogger(__name__)
 
@@ -15,19 +15,18 @@ CANDIDATES = 30  # chunk-level pool retrieved before collapsing to one hit per d
 
 
 def search(query: str, model: str = "hybrid", top_k: int = 5) -> list[SearchResult]:
-    # TODO(WS4): filters.parse(query) here - strip from:/in:/before:/after:/type:
-    # tokens and constrain the SQL in each model accordingly.
+    query, f = filters.parse(query)  # strips from:/in:/before:/after:/type:
     with get_conn() as conn:
         if model == "boolean":
             return boolean_model.search(conn, query, top_k)  # TODO(SHARED)
         if model == "tfidf":
             return tfidf_model.search(conn, query, top_k)  # TODO(SHARED)
         if model == "bm25":
-            hits = bm25_model.search(conn, query, CANDIDATES)
+            hits = bm25_model.search(conn, query, CANDIDATES, f)
         elif model == "dense":
-            hits = dense_model.search(conn, query, CANDIDATES)
+            hits = dense_model.search(conn, query, CANDIDATES, f)
         elif model == "hybrid":
-            hits = _hybrid(conn, query, CANDIDATES)
+            hits = _hybrid(conn, query, CANDIDATES, f)
         else:
             raise ValueError(f"unknown model: {model}")
         # One hit per document (the top chunk), then enrich for display.
@@ -36,17 +35,35 @@ def search(query: str, model: str = "hybrid", top_k: int = 5) -> list[SearchResu
         return results
 
 
-def _hybrid(conn: psycopg.Connection, query: str, limit: int) -> list[SearchResult]:
-    """BM25 + dense fused with RRF (k=60); degrades to BM25-only when the
-    embedder is unavailable (dense returns [] and warns)."""
-    lex = bm25_model.search(conn, query, CANDIDATES)
-    den = dense_model.search(conn, query, CANDIDATES)
+def _hybrid(
+    conn: psycopg.Connection, query: str, limit: int, f: filters.Filters | None = None
+) -> list[SearchResult]:
+    """BM25 + dense fused with RRF (k=60), then nudged by recency; degrades to
+    BM25-only when the embedder is unavailable (dense returns [] and warns)."""
+    lex = bm25_model.search(conn, query, CANDIDATES, f)
+    den = dense_model.search(conn, query, CANDIDATES, f)
     if not den:
         return lex[:limit]
     by_chunk = {r.chunk_id: r for r in [*den, *lex]}
     fused = fusion.rrf([[r.chunk_id for r in lex], [r.chunk_id for r in den]])
-    # TODO(WS4): fusion.recency_boost(fused, ...) before the cut.
+    # Recency applies to the whole candidate pool, before the cut - boosting
+    # only the survivors could never pull a fresh doc into the top-k.
+    latest = _latest_sightings(conn, [r.document_id for r in by_chunk.values()])
+    fused = fusion.recency_boost(
+        fused, {cid: latest[r.document_id] for cid, r in by_chunk.items() if r.document_id in latest}
+    )
     return [replace(by_chunk[cid], score=score) for cid, score in fused[:limit]]
+
+
+def _latest_sightings(conn: psycopg.Connection, doc_ids: list[int]) -> dict:
+    """document_id -> newest sent_at, for the recency boost."""
+    return dict(
+        conn.execute(
+            "SELECT document_id, max(sent_at) FROM sightings"
+            " WHERE document_id = ANY(%s) GROUP BY document_id",
+            (doc_ids,),
+        ).fetchall()
+    )
 
 
 def _one_per_document(hits: list[SearchResult]) -> list[SearchResult]:

@@ -11,16 +11,22 @@ import psycopg
 from rank_bm25 import BM25Okapi
 
 from wadr.models import SearchResult
+from wadr.retrieval.filters import Filters, where
 
 
 def _tokenize(text: str) -> list[str]:
     return re.findall(r"\w+", text.lower())
 
 
-def search(conn: psycopg.Connection, query: str, top_k: int = 5) -> list[SearchResult]:
+def search(
+    conn: psycopg.Connection, query: str, top_k: int = 5, filters: Filters | None = None
+) -> list[SearchResult]:
+    predicate, params = where(filters)
     rows = conn.execute(
         "SELECT c.id, c.document_id, c.text, d.filename"
         " FROM chunks c JOIN documents d ON d.id = c.document_id"
+        f" WHERE true{predicate}",
+        params,
     ).fetchall()
     if not rows:
         return []

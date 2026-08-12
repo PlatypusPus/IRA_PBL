@@ -6,6 +6,7 @@ The imports below are NOT skipped - stubs must always stay importable.
 
 import base64
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -116,7 +117,6 @@ def test_run_eval_produces_model_table():
 
 # ---------------------------------------------------------------- WS4
 
-@WS4
 def test_filters_parse_all_tokens():
     clean, f = filters.parse("invoice from:dad in:family after:2026-01-01 type:pdf")
     assert clean == "invoice"
@@ -124,15 +124,37 @@ def test_filters_parse_all_tokens():
     assert str(f.after) == "2026-01-01" and f.doc_type == "pdf"
 
 
-@WS4
 def test_filters_leave_plain_queries_alone():
     clean, f = filters.parse("exam timetable")
     assert clean == "exam timetable" and f == filters.Filters()
 
 
-@WS4
+def test_filters_reject_bad_dates():
+    with pytest.raises(ValueError):
+        filters.parse("notes before:last-tuesday")
+
+
 def test_recency_boost_prefers_recent_docs():
-    fusion.recency_boost([], {})  # newest sighting should lift a doc's fused score
+    now = datetime(2026, 8, 12, tzinfo=UTC)
+    fresh, stale = 1, 2
+    # stale wins on relevance, but only just; a same-day re-share flips them
+    ranked = fusion.recency_boost(
+        [(stale, 0.020), (fresh, 0.019)],
+        {fresh: now, stale: now - timedelta(days=365)},
+        now=now,
+    )
+    assert [item for item, _ in ranked] == [fresh, stale]
+    # unknown ids keep their score exactly, and order is score-descending
+    assert fusion.recency_boost([(9, 0.5)], {}, now=now) == [(9, 0.5)]
+
+
+def test_recency_boost_does_not_overrule_relevance():
+    now = datetime(2026, 8, 12, tzinfo=UTC)
+    # rank-1 vs rank-30 in RRF is a ~2x gap; a fresh doc must not close that
+    ranked = fusion.recency_boost(
+        [(1, 1 / 61), (2, 1 / 90)], {2: now}, now=now
+    )
+    assert [item for item, _ in ranked] == [1, 2]
 
 
 @WS4

@@ -112,9 +112,12 @@ waiting for bodies.
 standing-query hook in `ingestion/router.py` (marked TODO(WS4)).
 
 **Tasks (dependency order):**
-- [ ] `filters.parse()`: strip `from:/in:/before:/after:/type:` tokens (docstring has the worked example)
-- [ ] Thread `Filters` into `service.search()` and the bm25/dense SQL (join `sightings`, WHERE clauses)
-- [ ] `fusion.recency_boost()`: exponential decay on newest sighting age; wire into `_hybrid`
+- [x] `filters.parse()`: strip `from:/in:/before:/after:/type:` tokens (docstring has the worked example)
+- [x] Thread `Filters` into `service.search()` and the bm25/dense SQL (join `sightings`, WHERE clauses)
+- [x] `fusion.recency_boost()`: decay on newest sighting age; wired into `_hybrid`.
+      **w = 0.15, half-life = 30 days.** RRF scores are flat — rank 1 beats
+      rank 10 by only 1.15x and rank 30 by 1.48x — so 0.15 lifts a same-day
+      re-share about ten places; 0.5 overruled relevance entirely.
 - [ ] `/similar/{document_id}`: pgvector neighbors of the doc's chunks, excluding itself
 - [ ] `/feedback`: insert into the `feedback` table
 - [ ] Standing queries: after ingest, match the new doc against `standing_queries` and push via the adapter (CLI print is fine until WS1 lands)

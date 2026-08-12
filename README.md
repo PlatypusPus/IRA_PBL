@@ -128,8 +128,13 @@ uv run ruff check .
 | Env var                  | Default                                      |
 |--------------------------|----------------------------------------------|
 | `WADR_DATABASE_URL`      | `postgresql://wadr:wadr@localhost:5433/wadr` |
-| `WADR_OLLAMA_URL`        | `http://localhost:11434`                     |
-| `WADR_OPENWA_BRIDGE_URL` | `http://localhost:8085` (WS1)                |
+| `WADR_OLLAMA_URL`        | `http://127.0.0.1:11434`                     |
+| `WADR_OPENWA_BRIDGE_URL` | `http://127.0.0.1:8085` (WS1)                |
+
+The two HTTP defaults are `127.0.0.1`, not `localhost`, on purpose: `localhost`
+resolves to `::1` first, both services bind IPv4, and Python's urllib has no
+Happy Eyeballs fallback — it stalls ~2s per call before retrying IPv4. Keep the
+literal IP if you override them on a single machine.
 
 ## Schema changes
 

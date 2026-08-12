@@ -23,7 +23,7 @@ Outbound (WADR -> bridge)
 -------------------------
 POST {WADR_OPENWA_BRIDGE_URL}/send       {chat_id, text}
 POST {WADR_OPENWA_BRIDGE_URL}/send-file  {chat_id, filename, mime_type, data_base64}
-Env: WADR_OPENWA_BRIDGE_URL, default http://localhost:8085.
+Env: WADR_OPENWA_BRIDGE_URL, default http://127.0.0.1:8085.
 """
 
 import base64
@@ -45,7 +45,9 @@ _last_results: dict[str, list[int]] = {}
 
 
 def _post(route: str, body: dict) -> None:
-    bridge = os.environ.get("WADR_OPENWA_BRIDGE_URL", "http://localhost:8085")
+    # 127.0.0.1, not localhost - see the note in indexing/embedder.py; urllib
+    # tries ::1 first and eats seconds waiting for it to fail.
+    bridge = os.environ.get("WADR_OPENWA_BRIDGE_URL", "http://127.0.0.1:8085")
     req = urllib.request.Request(
         bridge + route,
         data=json.dumps(body).encode(),
@@ -75,7 +77,11 @@ class OpenWAAdapter(MessagingInterface):
         if not query:
             self.send_text(chat_id, "Usage: /find <query>")
             return
-        results = service.search(query)
+        try:
+            results = service.search(query)
+        except ValueError as e:  # malformed filter token - tell the chat, don't 500
+            self.send_text(chat_id, str(e))
+            return
         _last_results[chat_id] = [r.document_id for r in results]
         self.send_results(chat_id, results)
 

@@ -11,7 +11,11 @@ import urllib.request
 
 log = logging.getLogger(__name__)
 
-OLLAMA_URL = os.environ.get("WADR_OLLAMA_URL", "http://localhost:11434")
+# 127.0.0.1, NOT localhost: localhost resolves to ::1 first, Ollama binds IPv4
+# only, and urllib has no Happy Eyeballs - it blocks ~2s on the dead IPv6
+# connection before falling back. That was 2.3s on every embed, i.e. on every
+# ingest and every /find. Measured: 2.24s -> 0.18s.
+OLLAMA_URL = os.environ.get("WADR_OLLAMA_URL", "http://127.0.0.1:11434")
 MODEL = "nomic-embed-text"
 EMBEDDING_DIM = 768  # must match vector(768) in schema.sql
 
