@@ -10,14 +10,18 @@
 //
 //   inbound   document/image/voice  -> POST {WADR_API}/webhook/openwa
 //   inbound   "/find <query>"       -> POST {WADR_API}/webhook/openwa/query
-//   outbound  POST :8085/send {chat_id, text} -> WhatsApp message
+//   inbound   "/get <n>"            -> POST {WADR_API}/webhook/openwa/get
+//   outbound  POST :8085/send {chat_id, text}                        -> WhatsApp message
+//   outbound  POST :8085/send-file {chat_id, filename, mime_type, data_base64} -> WhatsApp file
 //   browser   http://localhost:8085/  -> QR connect page
 const http = require('http');
 const path = require('path');
+const fs = require('fs/promises');
 const {
   default: makeWASocket,
   useMultiFileAuthState,
   downloadMediaMessage,
+  fetchLatestBaileysVersion,
   DisconnectReason,
 } = require('baileys');
 const QRCode = require('qrcode');
@@ -51,8 +55,6 @@ async function onMessage(m) {
   try {
     if (media) {
       const data = await downloadMediaMessage(m, 'buffer', {});
-      // ponytail: media without a filename (photos, voice notes) gets one from
-      // the mime subtype - matches the extensions wadr's EXTRACTORS routes on.
       const ext = (media.mimetype || 'application/octet-stream').split('/')[1].split(';')[0];
       const filename = media.fileName || `wa-${m.messageTimestamp}.${ext}`;
       const res = await postWadr('/webhook/openwa', {
@@ -63,21 +65,35 @@ async function onMessage(m) {
         mime_type: media.mimetype,
         data_base64: data.toString('base64'),
       });
-      console.log(`  -> ingest ${filename} (${media.mimetype}): HTTP ${res.status}`);
+      if (res.ok) {
+        const { duplicate } = await res.json().catch(() => ({}));
+        console.log(`  -> ingest ${filename}: ${duplicate ? 'duplicate' : 'new'} (HTTP ${res.status})`);
+      } else {
+        console.log(`  -> ingest ${filename}: FAILED (HTTP ${res.status})`);
+      }
     } else if (text.startsWith('/find ')) {
       await postWadr('/webhook/openwa/query', { chat_id: chatId, sender, text });
       console.log(`  -> query: ${text}`);
+    } else if (text.startsWith('/get ')) {
+      await postWadr('/webhook/openwa/get', { chat_id: chatId, sender, text });
+      console.log(`  -> get: ${text}`);
     } else {
-      console.log('  ignored (no media, not "/find ...")');
+      console.log('  ignored (no media, not "/find"/"/get")');
     }
   } catch (e) {
     console.error('message handling failed:', e);
   }
 }
 
+const AUTH_DIR = path.join(__dirname, 'auth');
+
 async function startWA() {
-  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'auth'));
-  const s = makeWASocket({ auth: state });
+  // Baileys ships a hardcoded WA Web protocol version that goes stale within
+  // weeks; an outdated one makes WA reject the handshake before the QR stage
+  // ("Connection Failure" on every attempt, forever) - always fetch the live one.
+  const { version } = await fetchLatestBaileysVersion();
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  const s = makeWASocket({ auth: state, version });
   s.ev.on('creds.update', saveCreds);
   s.ev.on('connection.update', async (u) => {
     if (u.qr) {
@@ -93,11 +109,13 @@ async function startWA() {
     if (u.connection === 'close') {
       sock = null;
       if (u.lastDisconnect?.error?.output?.statusCode === DisconnectReason.loggedOut) {
-        status = 'logged out - delete bridge/auth and restart';
-        console.error(status);
+        status = 'logged out - generating a new QR';
+        console.log(status);
+        await fs.rm(AUTH_DIR, { recursive: true, force: true });
+        startWA();
       } else {
         status = 'reconnecting';
-        startWA();
+        setTimeout(startWA, 2000); // backoff so a bad network doesn't spin-loop
       }
     }
   });
@@ -137,6 +155,19 @@ http.createServer(async (req, res) => {
       for await (const chunk of req) body += chunk;
       const { chat_id, text } = JSON.parse(body);
       await sock.sendMessage(chat_id, { text });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end('{}');
+    }
+    if (req.method === 'POST' && req.url === '/send-file') {
+      if (!sock) { res.writeHead(503); return res.end('not connected'); }
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const { chat_id, filename, mime_type, data_base64 } = JSON.parse(body);
+      await sock.sendMessage(chat_id, {
+        document: Buffer.from(data_base64, 'base64'),
+        fileName: filename,
+        mimetype: mime_type,
+      });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end('{}');
     }

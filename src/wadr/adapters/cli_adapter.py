@@ -26,5 +26,5 @@ class CLIAdapter(MessagingInterface):
             print("No results.")
             return
         for i, r in enumerate(results, start=1):
-            print(f"{i}. {r.filename}  (doc {r.document_id}, score {r.score:.4f})")
+            print(f"{i}. {r.filename}{r.provenance()}")
             print(f"   {r.snippet}\n")

@@ -11,34 +11,84 @@ from wadr.retrieval import bm25_model, boolean_model, dense_model, fusion, tfidf
 
 log = logging.getLogger(__name__)
 
-CANDIDATES = 20  # per-model pool fed into RRF
+CANDIDATES = 30  # chunk-level pool retrieved before collapsing to one hit per document
 
 
 def search(query: str, model: str = "hybrid", top_k: int = 5) -> list[SearchResult]:
     # TODO(WS4): filters.parse(query) here - strip from:/in:/before:/after:/type:
     # tokens and constrain the SQL in each model accordingly.
     with get_conn() as conn:
-        if model == "bm25":
-            return bm25_model.search(conn, query, top_k)
-        if model == "dense":
-            return dense_model.search(conn, query, top_k)
         if model == "boolean":
             return boolean_model.search(conn, query, top_k)  # TODO(SHARED)
         if model == "tfidf":
             return tfidf_model.search(conn, query, top_k)  # TODO(SHARED)
-        if model == "hybrid":
-            return _hybrid(conn, query, top_k)
-        raise ValueError(f"unknown model: {model}")
+        if model == "bm25":
+            hits = bm25_model.search(conn, query, CANDIDATES)
+        elif model == "dense":
+            hits = dense_model.search(conn, query, CANDIDATES)
+        elif model == "hybrid":
+            hits = _hybrid(conn, query, CANDIDATES)
+        else:
+            raise ValueError(f"unknown model: {model}")
+        # One hit per document (the top chunk), then enrich for display.
+        results = _one_per_document(hits)[:top_k]
+        _enrich(conn, query, results)
+        return results
 
 
-def _hybrid(conn: psycopg.Connection, query: str, top_k: int) -> list[SearchResult]:
+def _hybrid(conn: psycopg.Connection, query: str, limit: int) -> list[SearchResult]:
     """BM25 + dense fused with RRF (k=60); degrades to BM25-only when the
     embedder is unavailable (dense returns [] and warns)."""
     lex = bm25_model.search(conn, query, CANDIDATES)
     den = dense_model.search(conn, query, CANDIDATES)
     if not den:
-        return lex[:top_k]
+        return lex[:limit]
     by_chunk = {r.chunk_id: r for r in [*den, *lex]}
     fused = fusion.rrf([[r.chunk_id for r in lex], [r.chunk_id for r in den]])
     # TODO(WS4): fusion.recency_boost(fused, ...) before the cut.
-    return [replace(by_chunk[cid], score=score) for cid, score in fused[:top_k]]
+    return [replace(by_chunk[cid], score=score) for cid, score in fused[:limit]]
+
+
+def _one_per_document(hits: list[SearchResult]) -> list[SearchResult]:
+    """Collapse chunk hits to one per document, keeping the best-scoring chunk.
+    `hits` is already score-ordered, so first-seen per document wins."""
+    seen: set[int] = set()
+    out: list[SearchResult] = []
+    for r in hits:
+        if r.document_id not in seen:
+            seen.add(r.document_id)
+            out.append(r)
+    return out
+
+
+def _enrich(conn: psycopg.Connection, query: str, results: list[SearchResult]) -> None:
+    """Attach a keyword-in-context snippet and provenance (who shared it, when)
+    to the final results. One query each; mutates the results in place."""
+    if not results:
+        return
+    chunk_ids = [r.chunk_id for r in results]
+    doc_ids = [r.document_id for r in results]
+    # keyword-in-context snippet, *bold* around matches (renders bold in WhatsApp);
+    # ts_headline falls back to the start of the chunk when nothing matches.
+    snippets = dict(
+        conn.execute(
+            "SELECT id, ts_headline('english', text,"
+            "   websearch_to_tsquery('english', %s),"
+            "   'StartSel=*,StopSel=*,MaxWords=35,MinWords=15,MaxFragments=1')"
+            " FROM chunks WHERE id = ANY(%s)",
+            (query, chunk_ids),
+        ).fetchall()
+    )
+    # newest sighting per document: who shared it and when
+    sightings = {
+        row[0]: (row[1], row[2])
+        for row in conn.execute(
+            "SELECT DISTINCT ON (document_id) document_id, sender, sent_at"
+            " FROM sightings WHERE document_id = ANY(%s)"
+            " ORDER BY document_id, sent_at DESC",
+            (doc_ids,),
+        ).fetchall()
+    }
+    for r in results:
+        r.snippet = snippets.get(r.chunk_id, r.snippet).strip()
+        r.sender, r.sent_at = sightings.get(r.document_id, (None, None))

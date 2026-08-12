@@ -33,10 +33,18 @@ def openwa_webhook(payload: dict):
 @app.post("/webhook/openwa/query")
 def openwa_query(payload: dict):
     """'/find <query>' from a chat: search, reply into the same chat via bridge /send."""
-    query = payload.get("text", "").removeprefix("/find").strip()
-    if not query or "chat_id" not in payload:
-        raise HTTPException(400, "need chat_id and text '/find <query>'")
-    OpenWAAdapter().send_results(payload["chat_id"], service.search(query))
+    if "chat_id" not in payload:
+        raise HTTPException(400, "need chat_id")
+    OpenWAAdapter().handle_query(payload)
+    return {}
+
+
+@app.post("/webhook/openwa/get")
+def openwa_get(payload: dict):
+    """'/get <n>' from a chat: send the nth file of the last /find via bridge /send-file."""
+    if "chat_id" not in payload:
+        raise HTTPException(400, "need chat_id")
+    OpenWAAdapter().handle_get(payload)
     return {}
 
 

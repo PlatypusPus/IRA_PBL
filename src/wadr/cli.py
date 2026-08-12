@@ -1,6 +1,4 @@
 """wadr command-line entry point.
-
-ponytail: argparse - stdlib is plenty for two subcommands.
 """
 
 import argparse

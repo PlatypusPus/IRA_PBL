@@ -105,10 +105,16 @@ The bridge reads an optional `.env` at the repo root (Node's native
 if port 8000 is busy on your machine (then run uvicorn with `--port 8017`).
 
 Then open <http://localhost:8085> and scan the QR with WhatsApp
-(**Linked devices → Link a device**). Once connected: send any PDF/document to
-the linked number to ingest it; send `/find <query>` in a chat to search and
-get a ranked reply. Re-forwarding a known file records a sighting, not a new
-document.
+(**Linked devices → Link a device**). Once connected:
+
+- **Send any PDF/document** to ingest it — the bridge reacts ✅ (saved), 📎
+  (already had it), or ❌ (failed), so the sender isn't left guessing.
+- **`/find <query>`** searches and replies with a ranked list.
+- **`/get <n>`** sends back the nth file from your last `/find`.
+
+Re-forwarding a known file records a sighting, not a new document. Files
+ingested before the `content` column (migration 0002) can't be `/get`-ed until
+re-shared.
 
 ## Tests & lint
 

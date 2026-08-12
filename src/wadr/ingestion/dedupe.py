@@ -17,12 +17,17 @@ def find_document(conn: psycopg.Connection, hash_: str) -> int | None:
 
 
 def insert_document(
-    conn: psycopg.Connection, hash_: str, filename: str, mime_type: str, extracted_text: str
+    conn: psycopg.Connection,
+    hash_: str,
+    filename: str,
+    mime_type: str,
+    extracted_text: str,
+    content: bytes,
 ) -> int:
     row = conn.execute(
-        "INSERT INTO documents (file_hash, filename, mime_type, extracted_text)"
-        " VALUES (%s, %s, %s, %s) RETURNING id",
-        (hash_, filename, mime_type, extracted_text),
+        "INSERT INTO documents (file_hash, filename, mime_type, extracted_text, content)"
+        " VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        (hash_, filename, mime_type, extracted_text, content),
     ).fetchone()
     return row[0]
 

@@ -42,7 +42,7 @@ def test_duplicate_content_is_one_document_with_new_sighting():
         h = dedupe.file_hash(data)
         assert dedupe.find_document(conn, h) is None
 
-        doc_id = dedupe.insert_document(conn, h, "a.txt", "text/plain", "hello")
+        doc_id = dedupe.insert_document(conn, h, "a.txt", "text/plain", "hello", data)
         dedupe.add_sighting(conn, doc_id, "alice", "family chat", datetime(2026, 1, 1))
 
         # the same file arrives again, forwarded to another chat

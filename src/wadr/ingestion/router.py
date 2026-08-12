@@ -58,7 +58,7 @@ def ingest(
             return None
 
         mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-        doc_id = dedupe.insert_document(conn, hash_, filename, mime, extracted)
+        doc_id = dedupe.insert_document(conn, hash_, filename, mime, extracted, file_bytes)
         dedupe.add_sighting(conn, doc_id, sender, chat, sent_at)
 
         pieces = chunker.chunk(extracted)
