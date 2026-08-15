@@ -14,3 +14,5 @@ bridge/auth/
 **.node-persist**
 **_IGNORE_**
 # end managed
+
+context.md

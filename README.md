@@ -65,6 +65,20 @@ Prereqs: [Docker](https://docs.docker.com/get-docker/),
 for dense/hybrid search (`ollama pull nomic-embed-text`). Without Ollama
 everything still runs — search degrades to BM25-only with a warning.
 
+Image OCR needs the Tesseract executable on the system — `pytesseract` only
+wraps it, so pip-installing the Python package alone is not enough:
+
+```sh
+brew install tesseract          # macOS; Linux: apt install tesseract-ocr
+```
+
+Voice-note transcription needs `ffmpeg`, plus a one-time download of the
+Whisper `base` model (~150 MB, cached under `~/.cache/huggingface`):
+
+```sh
+brew install ffmpeg             # macOS; Linux: apt install ffmpeg
+```
+
 ```sh
 docker compose up -d      # Postgres 16 + pgvector
 uv sync
