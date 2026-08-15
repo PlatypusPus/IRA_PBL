@@ -16,3 +16,5 @@ bridge/auth/
 # end managed
 
 context.md
+.DS_Store
+tests/.DS_Store
