@@ -36,12 +36,21 @@ CANDIDATES = 30  # chunk-level pool retrieved before collapsing to one hit per d
 
 
 def search(
-    query: str, user_id: int, model: str = "hybrid", top_k: int = 5
+    query: str,
+    user_id: int,
+    model: str = "hybrid",
+    top_k: int = 5,
+    seen_by: tuple[str, str] | None = None,
 ) -> list[SearchResult]:
-    """Search the documents this user's numbers have received."""
+    """Search the documents this user's numbers have received.
+
+    seen_by=(sender, chat) narrows that to what one other person could already
+    see - set it when the search was typed by a group member rather than by the
+    account owner. None is the owner, who sees all of their own documents.
+    """
     query, f = filters.parse(query)  # strips from:/in:/before:/after:/type:
     with get_conn() as conn:
-        f = replace(f, account_ids=account_ids(conn, user_id))
+        f = replace(f, account_ids=account_ids(conn, user_id), seen_by=seen_by)
         if not f.account_ids:
             return []  # no numbers linked yet: nothing of yours to search
         if model == "bm25":
@@ -53,7 +62,7 @@ def search(
         else:
             raise ValueError(f"unknown model: {model}")
         results = _one_per_document(hits)[:top_k]
-        _enrich(conn, query, results)
+        _enrich(conn, query, results, f)
         return results
 
 
@@ -100,21 +109,81 @@ def similar(document_id: int, user_id: int, top_k: int = 5) -> list[SearchResult
         ]
 
 
-def get_document(document_id: int, user_id: int) -> tuple[str, str, bytes] | None:
-    """(filename, mime_type, content) for download, or None if not yours."""
+def get_document(
+    document_id: int, user_id: int, seen_by: tuple[str, str] | None = None
+) -> tuple[str, str, bytes] | None:
+    """(filename, mime_type, content) for download, or None if not yours.
+
+    seen_by narrows it the same way search() does, so a group member cannot
+    /get a file they were never allowed to find.
+    """
+    with get_conn() as conn:
+        mine = account_ids(conn, user_id)
+        if not mine:
+            return None
+        seen_sql, seen_params = filters.seen_by_sql(seen_by)
+        row = conn.execute(
+            "SELECT d.filename, d.mime_type, d.content FROM documents d"
+            " WHERE d.id = %s AND EXISTS (SELECT 1 FROM sightings s"
+            f"   WHERE s.document_id = d.id AND s.account_id = ANY(%s){seen_sql})",
+            (document_id, mine, *seen_params),
+        ).fetchone()
+    if row is None or row[2] is None:
+        return None
+    return row[0], row[1], bytes(row[2])
+
+
+def get_document_text(document_id: int, user_id: int, max_chars: int = 20_000) -> dict | None:
+    """Extracted text of a document, for an agent to actually read.
+
+    Truncated: a 200-page scan would otherwise blow an agent's context in one
+    tool call. The reply says when it was cut so the caller knows.
+    """
     with get_conn() as conn:
         mine = account_ids(conn, user_id)
         if not mine:
             return None
         row = conn.execute(
-            "SELECT d.filename, d.mime_type, d.content FROM documents d"
+            "SELECT d.id, d.filename, d.mime_type, d.extracted_text FROM documents d"
             " WHERE d.id = %s AND EXISTS (SELECT 1 FROM sightings s"
             "   WHERE s.document_id = d.id AND s.account_id = ANY(%s))",
             (document_id, mine),
         ).fetchone()
-    if row is None or row[2] is None:
+    if row is None:
         return None
-    return row[0], row[1], bytes(row[2])
+    text = row[3] or ""
+    return {
+        "document_id": row[0],
+        "filename": row[1],
+        "mime_type": row[2],
+        "text": text[:max_chars],
+        "truncated": len(text) > max_chars,
+        "total_characters": len(text),
+    }
+
+
+def recent_documents(user_id: int, limit: int = 20) -> list[dict]:
+    """Most recently received documents - what an agent should look at when
+    asked "what did I get this week"."""
+    with get_conn() as conn:
+        mine = account_ids(conn, user_id)
+        if not mine:
+            return []
+        rows = conn.execute(
+            "SELECT d.id, d.filename, d.mime_type, max(s.sent_at), min(s.sender)"
+            "  FROM documents d JOIN sightings s ON s.document_id = d.id"
+            " WHERE s.account_id = ANY(%s)"
+            " GROUP BY d.id, d.filename, d.mime_type"
+            " ORDER BY max(s.sent_at) DESC LIMIT %s",
+            (mine, limit),
+        ).fetchall()
+    return [
+        {
+            "document_id": r[0], "filename": r[1], "mime_type": r[2],
+            "received_at": r[3].isoformat() if r[3] else None, "sender": r[4],
+        }
+        for r in rows
+    ]
 
 
 def _hybrid(
@@ -171,9 +240,11 @@ def _one_per_document(hits: list[SearchResult]) -> list[SearchResult]:
     return out
 
 
-def _enrich(conn: psycopg.Connection, query: str, results: list[SearchResult]) -> None:
-    """Attach a keyword-in-context snippet and provenance (who shared it, when)
-    to the final results. One query each; mutates the results in place."""
+def _enrich(
+    conn: psycopg.Connection, query: str, results: list[SearchResult], f: filters.Filters
+) -> None:
+    """Attach a keyword-in-context snippet, provenance (who shared it, when) and
+    mime type to the final results. One query each; mutates them in place."""
     if not results:
         return
     chunk_ids = [r.chunk_id for r in results]
@@ -189,15 +260,20 @@ def _enrich(conn: psycopg.Connection, query: str, results: list[SearchResult]) -
             (query, chunk_ids),
         ).fetchall()
     )
+    # Scoped exactly like the search was: the newest sighting of a shared file
+    # may belong to a different tenant, and "from <their contact>" is their
+    # business, not the searcher's.
+    seen_sql, seen_params = filters.seen_by_sql(f.seen_by)
     sightings = {
-        row[0]: (row[1], row[2])
+        row[0]: (row[1], row[2], row[3])
         for row in conn.execute(
-            "SELECT DISTINCT ON (document_id) document_id, sender, sent_at"
-            " FROM sightings WHERE document_id = ANY(%s)"
-            " ORDER BY document_id, sent_at DESC",
-            (doc_ids,),
+            "SELECT DISTINCT ON (s.document_id) s.document_id, s.sender, s.sent_at, d.mime_type"
+            "  FROM sightings s JOIN documents d ON d.id = s.document_id"
+            f" WHERE s.document_id = ANY(%s) AND s.account_id = ANY(%s){seen_sql}"
+            " ORDER BY s.document_id, s.sent_at DESC",
+            (doc_ids, f.account_ids, *seen_params),
         ).fetchall()
     }
     for r in results:
         r.snippet = snippets.get(r.chunk_id, r.snippet).strip()
-        r.sender, r.sent_at = sightings.get(r.document_id, (None, None))
+        r.sender, r.sent_at, r.mime_type = sightings.get(r.document_id, (None, None, None))

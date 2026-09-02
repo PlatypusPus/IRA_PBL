@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { ArrowUp, Download, FileText, Sparkles } from "lucide-react"
+import { ArrowUp, Download, Eye, FileText, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
 import { api, type Hit, type Message } from "@/lib/api"
@@ -14,7 +14,13 @@ const EXAMPLES = [
   "lecture notes after:2026-01-01",
 ]
 
-export function ChatView({ hasNumbers }: { hasNumbers: boolean }) {
+export function ChatView({
+  hasNumbers, conversationId, onStarted,
+}: {
+  hasNumbers: boolean
+  conversationId: number | null
+  onStarted: (id: number) => void
+}) {
   const [messages, setMessages] = useState<Message[]>([])
   const [text, setText] = useState("")
   const [loading, setLoading] = useState(true)
@@ -22,11 +28,16 @@ export function ChatView({ hasNumbers }: { hasNumbers: boolean }) {
   const bottom = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    api.history()
+    if (conversationId === null) {
+      setMessages([])
+      setLoading(false)
+      return
+    }
+    api.history(conversationId)
       .then(setMessages)
       .catch(() => toast.error("could not load your conversation"))
       .finally(() => setLoading(false))
-  }, [])
+  }, [conversationId])
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" })
@@ -40,13 +51,17 @@ export function ChatView({ hasNumbers }: { hasNumbers: boolean }) {
     // Show the question immediately; a search round-trip is ~300ms and the
     // input feeling dead for that long reads as broken.
     const optimistic: Message = {
-      id: -Date.now(), role: "user", text: trimmed, results: [],
+      id: -Date.now(), conversation_id: conversationId ?? 0,
+      role: "user", text: trimmed, results: [],
       created_at: new Date().toISOString(),
     }
     setMessages((prev) => [...prev, optimistic])
     try {
-      const reply = await api.ask(trimmed)
+      const reply = await api.ask(trimmed, conversationId)
       setMessages((prev) => [...prev, reply])
+      // The first message is what creates the conversation, and its text is the
+      // title in the sidebar - so tell the shell either way.
+      onStarted(reply.conversation_id)
     } catch (e) {
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id))
       setText(trimmed)
@@ -109,7 +124,7 @@ function Empty({ hasNumbers, onPick }: { hasNumbers: boolean; onPick: (q: string
       <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
         {hasNumbers
           ? "Every PDF, photo and voice note shared with your linked numbers is searchable — including text inside scans and what was said in voice notes."
-          : "Connect a WhatsApp number from the sidebar. Everything shared with it becomes searchable here."}
+          : "Open Numbers at the bottom of the sidebar and connect one. Everything shared with it becomes searchable here."}
       </p>
       {hasNumbers && (
         <div className="mt-6 flex flex-wrap justify-center gap-2">
@@ -189,6 +204,48 @@ function ResultCard({ hit }: { hit: Hit }) {
           <Download className="size-4" />
         </a>
       </div>
+      <Preview hit={hit} />
     </div>
+  )
+}
+
+function Preview({ hit }: { hit: Hit }) {
+  const [open, setOpen] = useState(false)
+  // The bytes may not be stored (older sightings, unsupported types) - then the
+  // request 404s and a broken-image frame is worse than no preview at all.
+  const [broken, setBroken] = useState(false)
+  const url = api.fileUrl(hit.document_id, true)
+  const mime = hit.mime_type ?? ""
+
+  if (broken) return null
+
+  if (mime.startsWith("image/")) {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="mt-3 block">
+        <img
+          src={url}
+          alt={hit.filename}
+          loading="lazy"  // a long conversation is a long list of these
+          onError={() => setBroken(true)}
+          className="max-h-64 rounded-lg border object-contain transition-opacity hover:opacity-90"
+        />
+      </a>
+    )
+  }
+
+  if (mime !== "application/pdf") return null
+
+  // ponytail: an <iframe> per PDF is heavy, and a reloaded conversation would
+  // mount one for every past result. Render it only when asked for.
+  return open ? (
+    <iframe
+      src={`${url}#view=FitH`}
+      title={hit.filename}
+      className="mt-3 h-96 w-full rounded-lg border bg-muted"
+    />
+  ) : (
+    <Button variant="outline" size="sm" className="mt-3" onClick={() => setOpen(true)}>
+      <Eye className="size-3.5" /> Preview
+    </Button>
   )
 }

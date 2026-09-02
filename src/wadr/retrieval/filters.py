@@ -27,11 +27,28 @@ class Filters:
     # only reachable if one of your own numbers received it. An empty list
     # matches nothing, which is the correct answer for "no numbers linked yet".
     account_ids: list[int] | None = None
+    # Privacy, also not user-typed: (sender, chat) of whoever asked, when that
+    # is someone OTHER than the number's owner - a group member typing /find.
+    # They may only reach what they already had: files they sent themselves, or
+    # files shared in the chat they are asking in. None means "the owner", who
+    # sees everything their own numbers received.
+    seen_by: tuple[str, str] | None = None
 
     # No __bool__ here on purpose. It used to return any(vars(...)), which made
     # Filters(account_ids=[]) falsy - and where() skipped the predicate entirely,
     # so a user with no linked numbers would have seen EVERY document in the
     # database. Tenancy must never ride on a truthiness shortcut.
+
+
+def seen_by_sql(seen_by: tuple[str, str] | None) -> tuple[str, list]:
+    """Extra predicate on a `sightings s` row, restricting it to one requester.
+
+    Exact equality, never ILIKE: this is an access boundary, and a substring
+    match would let "9188" stand in for somebody else's number.
+    """
+    if seen_by is None:
+        return "", []
+    return " AND (s.sender = %s OR s.chat = %s)", list(seen_by)
 
 
 # \b keeps "berlin:x" from matching "in:"; unknown prefixes fall through as text.
@@ -73,11 +90,17 @@ def where(f: Filters | None) -> tuple[str, list]:
     clauses: list[str] = []
     params: list = []
     if f.account_ids is not None:
+        # Tenancy and requester-visibility share ONE sighting row on purpose:
+        # the same row must be both "received by your number" and "one this
+        # person could see", or a group member could borrow another tenant's
+        # sighting of the same chat to reach a private document.
+        seen_sql, seen_params = seen_by_sql(f.seen_by)
         clauses.append(
             "EXISTS (SELECT 1 FROM sightings s WHERE s.document_id = d.id"
-            " AND s.account_id = ANY(%s))"
+            f" AND s.account_id = ANY(%s){seen_sql})"
         )
         params.append(f.account_ids)
+        params += seen_params
     if f.doc_type:
         # mime suffix OR filename extension: "pdf" -> application/pdf, but
         # "docx" only ever shows up in the filename (its mime ends in "document").

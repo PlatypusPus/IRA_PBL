@@ -18,7 +18,8 @@ from fastapi.staticfiles import StaticFiles
 
 from wadr import accounts
 from wadr.api import bridge_client
-from wadr.chat import answer, history
+from wadr.chat import NotYours, answer, conversations, history, start
+from wadr.chat import delete as delete_conversation
 from wadr.retrieval import service
 
 app = FastAPI(title="WADR")
@@ -132,12 +133,58 @@ def remove_account(account_id: int, user: dict = Depends(current_user)) -> dict:
     return {"ok": True}
 
 
+# --------------------------------------------------------------- API keys
+
+
+@app.get("/api/keys")
+def get_keys(user: dict = Depends(current_user)) -> list[dict]:
+    return accounts.list_api_keys(user["id"])
+
+
+@app.post("/api/keys")
+def add_key(payload: dict, user: dict = Depends(current_user)) -> dict:
+    """Mint a key. The plaintext is in this response and nowhere else, ever."""
+    key = accounts.create_api_key(user["id"], payload.get("label", ""))
+    return {"key": key, "keys": accounts.list_api_keys(user["id"])}
+
+
+@app.delete("/api/keys/{key_id}")
+def remove_key(key_id: int, user: dict = Depends(current_user)) -> dict:
+    try:
+        accounts.revoke_api_key(user["id"], key_id)
+    except accounts.AuthError as e:
+        raise HTTPException(404, str(e)) from e
+    return {"ok": True}
+
+
 # ------------------------------------------------------------------ chat
 
 
+@app.get("/api/conversations")
+def get_conversations(user: dict = Depends(current_user)) -> list[dict]:
+    return conversations(user["id"])
+
+
+@app.post("/api/conversations")
+def new_conversation(user: dict = Depends(current_user)) -> dict:
+    return start(user["id"])
+
+
+@app.delete("/api/conversations/{conversation_id}")
+def drop_conversation(conversation_id: int, user: dict = Depends(current_user)) -> dict:
+    try:
+        delete_conversation(user["id"], conversation_id)
+    except NotYours as e:
+        raise HTTPException(404, str(e)) from e
+    return {"ok": True}
+
+
 @app.get("/api/chat")
-def get_history(user: dict = Depends(current_user)) -> list[dict]:
-    return history(user["id"])
+def get_history(conversation_id: int, user: dict = Depends(current_user)) -> list[dict]:
+    try:
+        return history(user["id"], conversation_id)
+    except NotYours as e:
+        raise HTTPException(404, str(e)) from e
 
 
 @app.post("/api/chat")
@@ -146,7 +193,9 @@ def post_message(payload: dict, user: dict = Depends(current_user)) -> dict:
     if not text:
         raise HTTPException(400, "say something")
     try:
-        return answer(user["id"], text)
+        return answer(user["id"], text, payload.get("conversation_id"))
+    except NotYours as e:
+        raise HTTPException(404, str(e)) from e
     except ValueError as e:  # malformed filter token, e.g. before:soon
         raise HTTPException(400, str(e)) from e
 
@@ -160,7 +209,12 @@ def similar(document_id: int, user: dict = Depends(current_user)) -> list[dict]:
 
 
 @app.get("/api/documents/{document_id}/file")
-def download(document_id: int, user: dict = Depends(current_user)):
+def download(document_id: int, inline: bool = False, user: dict = Depends(current_user)):
+    """The file itself. inline=1 for previewing it in the page instead of saving.
+
+    A PDF in an <iframe> is downloaded rather than rendered unless the
+    disposition says inline, so the caller has to ask for it.
+    """
     found = service.get_document(document_id, user["id"])
     if found is None:
         raise HTTPException(404, "not found, or not stored - re-share it on WhatsApp")
@@ -168,7 +222,12 @@ def download(document_id: int, user: dict = Depends(current_user)):
     return StreamingResponse(
         io.BytesIO(content),
         media_type=mime_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition":
+                f'{"inline" if inline else "attachment"}; filename="{filename}"',
+            # These bytes never change - the id is a content hash's document.
+            "Cache-Control": "private, max-age=3600",
+        },
     )
 
 

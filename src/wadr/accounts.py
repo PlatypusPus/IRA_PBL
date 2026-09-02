@@ -186,3 +186,73 @@ def mark_linked(session_key: str, phone: str | None, status: str) -> None:
             "       phone = COALESCE(%s, phone) WHERE session_key = %s",
             (status, phone, session_key),
         )
+
+
+# ------------------------------------------------------------------ API keys
+
+
+KEY_PREFIX = "wadr_"
+
+
+def _key_hash(key: str) -> str:
+    # Plain SHA-256, not scrypt: an API key is 32 bytes of entropy from
+    # secrets.token_urlsafe, so there is no dictionary to attack and no reason
+    # to pay a KDF's cost on every agent call.
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def create_api_key(user_id: int, label: str = "") -> str:
+    """Mint a key. Returned in full exactly once - only its hash is stored."""
+    key = KEY_PREFIX + secrets.token_urlsafe(32)
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO api_keys (user_id, label, key_hash, prefix)"
+            " VALUES (%s, %s, %s, %s)",
+            (user_id, label.strip() or "Agent key", _key_hash(key), key[:12]),
+        )
+    return key
+
+
+def user_for_api_key(key: str | None) -> dict | None:
+    """Resolve a key to {id, email}, or None. Also stamps last_used_at."""
+    if not key:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            "UPDATE api_keys SET last_used_at = now() WHERE key_hash = %s"
+            " RETURNING user_id",
+            (_key_hash(key),),
+        ).fetchone()
+        if row is None:
+            return None
+        user = conn.execute(
+            "SELECT id, email FROM users WHERE id = %s", (row[0],)
+        ).fetchone()
+    return {"id": user[0], "email": user[1]} if user else None
+
+
+def list_api_keys(user_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, label, prefix, created_at, last_used_at FROM api_keys"
+            " WHERE user_id = %s ORDER BY id",
+            (user_id,),
+        ).fetchall()
+    return [
+        {
+            "id": r[0], "label": r[1], "prefix": r[2],
+            "created_at": r[3].isoformat(),
+            "last_used_at": r[4].isoformat() if r[4] else None,
+        }
+        for r in rows
+    ]
+
+
+def revoke_api_key(user_id: int, key_id: int) -> None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "DELETE FROM api_keys WHERE id = %s AND user_id = %s RETURNING id",
+            (key_id, user_id),
+        ).fetchone()
+    if row is None:
+        raise AuthError("no such key")

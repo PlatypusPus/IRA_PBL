@@ -1,0 +1,9 @@
+{
+  "name": "wadr",
+  "private": true,
+  "description": "Run the whole product: npm start",
+  "scripts": {
+    "start": "node scripts/start.js",
+    "setup": "cd bridge && npm install && cd ../web && npm install && npm run build"
+  }
+}

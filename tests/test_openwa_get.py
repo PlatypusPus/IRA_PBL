@@ -10,6 +10,8 @@ from wadr.adapters import openwa
 
 SESSION = "u1-test"
 CHAT = "c@x"
+ASKER = "919999900000@s.whatsapp.net"
+KEY = (SESSION, CHAT, ASKER)
 
 
 @pytest.fixture
@@ -21,13 +23,13 @@ def sent(monkeypatch):
     monkeypatch.setattr(
         openwa, "account_for_session_key", lambda key: {"id": 1, "user_id": 1}
     )
-    openwa._last_results.pop((SESSION, CHAT), None)
+    openwa._last_results.pop(KEY, None)
     return captured
 
 
 def _get(text):
     openwa.OpenWAAdapter().handle_get(
-        {"session_key": SESSION, "chat_id": CHAT, "text": text}
+        {"session_key": SESSION, "chat_id": CHAT, "sender": ASKER, "text": text}
     )
 
 
@@ -37,13 +39,13 @@ def test_get_without_prior_search_tells_user_to_find_first(sent):
 
 
 def test_get_out_of_range_reports_valid_range(sent):
-    openwa._last_results[(SESSION, CHAT)] = [10, 11]
+    openwa._last_results[KEY] = [10, 11]
     _get("/get 9")
     assert sent and "1-2" in sent[0]
 
 
 def test_get_non_numeric_is_rejected(sent):
-    openwa._last_results[(SESSION, CHAT)] = [10, 11]
+    openwa._last_results[KEY] = [10, 11]
     _get("/get two")
     assert sent and "Usage" in sent[0]
 
@@ -57,8 +59,8 @@ def test_unknown_session_is_refused(monkeypatch):
 
 def test_last_results_are_per_number(sent):
     """Two linked numbers in the same chat id must not share /get state."""
-    openwa._last_results[(SESSION, CHAT)] = [10, 11]
+    openwa._last_results[KEY] = [10, 11]
     openwa.OpenWAAdapter().handle_get(
-        {"session_key": "u2-other", "chat_id": CHAT, "text": "/get 1"}
+        {"session_key": "u2-other", "chat_id": CHAT, "sender": ASKER, "text": "/get 1"}
     )
     assert sent and "find" in sent[0].lower()

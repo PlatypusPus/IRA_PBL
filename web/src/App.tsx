@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
 import { LogOut, MessageSquareText } from "lucide-react"
 
-import { api, type Account, type User } from "@/lib/api"
+import { api, type Account, type Conversation, type User } from "@/lib/api"
+import { ApiKeysDialog } from "@/components/ApiKeysDialog"
 import { AuthScreen } from "@/components/AuthScreen"
 import { ChatView } from "@/components/ChatView"
-import { NumbersPanel } from "@/components/NumbersPanel"
+import { ConversationList } from "@/components/ConversationList"
+import { NumbersDialog } from "@/components/NumbersPanel"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -15,6 +17,11 @@ export default function App() {
   const [checking, setChecking] = useState(true)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loadingAccounts, setLoadingAccounts] = useState(true)
+  const [chats, setChats] = useState<Conversation[]>([])
+  const [loadingChats, setLoadingChats] = useState(true)
+  // null = a new chat nobody has typed in yet; it is created on first message,
+  // so abandoning one leaves nothing behind.
+  const [selected, setSelected] = useState<number | null>(null)
 
   useEffect(() => {
     // The session cookie may already be valid from a previous visit.
@@ -30,7 +37,16 @@ export default function App() {
       .finally(() => setLoadingAccounts(false))
   }, [user])
 
+  const refreshChats = useCallback(() => {
+    if (!user) return
+    api.conversations()
+      .then(setChats)
+      .catch(() => {})
+      .finally(() => setLoadingChats(false))
+  }, [user])
+
   useEffect(refreshAccounts, [refreshAccounts])
+  useEffect(refreshChats, [refreshChats])
 
   if (checking) {
     return (
@@ -53,6 +69,8 @@ export default function App() {
     await api.logOut()
     setUser(null)
     setAccounts([])
+    setChats([])
+    setSelected(null)
   }
 
   return (
@@ -66,25 +84,40 @@ export default function App() {
         </div>
 
         <Separator />
-        <div className="flex-1 overflow-y-auto py-2">
-          <NumbersPanel
-            accounts={accounts}
-            loading={loadingAccounts}
-            onChanged={refreshAccounts}
+        <div className="flex-1 overflow-y-auto py-1">
+          <ConversationList
+            conversations={chats}
+            selected={selected}
+            loading={loadingChats}
+            onSelect={setSelected}
+            onChanged={refreshChats}
           />
         </div>
 
         <Separator />
-        <div className="flex items-center justify-between gap-2 px-4 py-3">
-          <span className="truncate text-xs text-muted-foreground">{user.email}</span>
-          <Button size="icon" variant="ghost" className="size-7" onClick={signOut} aria-label="Sign out">
-            <LogOut className="size-3.5" />
-          </Button>
+        <div className="flex items-center justify-between gap-1 px-2 py-2">
+          <NumbersDialog
+            accounts={accounts}
+            loading={loadingAccounts}
+            onChanged={refreshAccounts}
+          />
+          <div className="flex items-center gap-1">
+            <ApiKeysDialog />
+            <Button size="icon" variant="ghost" className="size-7" onClick={signOut} aria-label="Sign out">
+              <LogOut className="size-3.5" />
+            </Button>
+          </div>
         </div>
+        <div className="truncate px-3 pb-3 text-xs text-muted-foreground">{user.email}</div>
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <ChatView hasNumbers={accounts.some((a) => a.status === "linked")} />
+        <ChatView
+          key={selected ?? "new"}  // a chat switch starts from a clean slate
+          conversationId={selected}
+          hasNumbers={accounts.some((a) => a.status === "linked")}
+          onStarted={(id) => { setSelected(id); refreshChats() }}
+        />
       </main>
 
       <Toaster />

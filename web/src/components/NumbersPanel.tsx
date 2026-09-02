@@ -6,7 +6,7 @@ import { api, type Account, type LinkState } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -15,6 +15,36 @@ const STATUS: Record<string, { label: string; variant: "default" | "secondary" |
   linked: { label: "Connected", variant: "default" },
   pending: { label: "Not linked", variant: "secondary" },
   logged_out: { label: "Signed out", variant: "outline" },
+}
+
+/** Numbers live in a dialog, not the sidebar: linking a phone is something you
+ *  do a handful of times, while the sidebar is for the chats you use daily. */
+export function NumbersDialog(props: {
+  accounts: Account[]
+  loading: boolean
+  onChanged: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const linked = props.accounts.filter((a) => a.status === "linked").length
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
+        render={<Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2" />}
+      >
+        <Smartphone className="size-3.5" />
+        <span className="text-xs">{linked || "no"} number{linked === 1 ? "" : "s"}</span>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>WhatsApp numbers</DialogTitle>
+          <DialogDescription>
+            Everything shared with a connected number becomes searchable here.
+          </DialogDescription>
+        </DialogHeader>
+        <NumbersPanel {...props} />
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 export function NumbersPanel({
@@ -46,14 +76,7 @@ export function NumbersPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-4 py-3">
-        <h2 className="text-sm font-medium">Numbers</h2>
-        <Button size="sm" variant="ghost" onClick={add} aria-label="Link a number">
-          <Plus className="size-4" />
-        </Button>
-      </div>
-
-      <div className="flex flex-col gap-1 px-2">
+      <div className="flex flex-col gap-1">
         {loading && <Skeleton className="mx-2 h-14 rounded-lg" />}
 
         {!loading && accounts.length === 0 && (
@@ -98,6 +121,10 @@ export function NumbersPanel({
           )
         })}
       </div>
+
+      <Button variant="secondary" className="mt-2" onClick={add}>
+        <Plus className="size-4" /> Link another number
+      </Button>
 
       <LinkDialog
         account={linking}

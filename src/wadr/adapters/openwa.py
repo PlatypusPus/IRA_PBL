@@ -12,6 +12,9 @@ POST /api/bridge/document   inbound file
     -> 200 {"document_id": 17, "duplicate": false}
 POST /api/bridge/query      a "/find <query>" message typed in WhatsApp
 POST /api/bridge/get        a "/get <n>" message
+    {session_key, chat_id, sender, text, from_me}
+    from_me says the owner typed it. Anyone else searches only what they can
+    already see - see _seen_by().
 POST /api/bridge/status     session went linked / logged out
 
 All four require the X-Bridge-Token shared secret.
@@ -31,10 +34,29 @@ from wadr.ingestion import dedupe
 from wadr.models import SearchResult
 from wadr.retrieval import service
 
-# (session_key, chat_id) -> document_ids of that chat's last /find, so "/get <n>"
-# can resolve n. ponytail: in-memory, unbounded, resets on restart - fine at
-# personal scale; move to a table if it must survive restarts.
-_last_results: dict[tuple[str, str], list[int]] = {}
+# (session_key, chat_id, sender) -> document_ids of that person's last /find, so
+# "/get <n>" can resolve n. Keyed by sender too, or two people searching in one
+# group would renumber each other's results. ponytail: in-memory, unbounded,
+# resets on restart - fine at personal scale; move to a table if it must survive.
+_last_results: dict[tuple[str, str, str], list[int]] = {}
+
+
+def _key(payload: dict) -> tuple[str, str, str]:
+    return (payload["session_key"], payload["chat_id"], payload.get("sender") or "")
+
+
+def _seen_by(payload: dict) -> tuple[str, str] | None:
+    """Who is asking, for search scoping - or None when it is the owner.
+
+    A linked number sits in group chats full of other people, and /find is
+    typed by whoever feels like typing it. Only the owner (from_me: the message
+    came from this very WhatsApp) gets to search everything the number ever
+    received; anyone else sees only what they could already see - files they
+    sent, or files shared in the chat they are asking in.
+    """
+    if payload.get("from_me"):
+        return None
+    return (payload.get("sender") or "", payload["chat_id"])
 
 
 class UnknownSession(ValueError):
@@ -79,12 +101,20 @@ class OpenWAAdapter(MessagingInterface):
         if not query:
             self.send_text(chat_id, "Usage: /find <query>")
             return
+        seen_by = _seen_by(payload)
         try:
-            results = service.search(query, account["user_id"])
+            results = service.search(query, account["user_id"], seen_by=seen_by)
         except ValueError as e:  # malformed filter token
             self.send_text(chat_id, str(e))
             return
-        _last_results[(session_key, chat_id)] = [r.document_id for r in results]
+        _last_results[_key(payload)] = [r.document_id for r in results]
+        if not results and seen_by is not None:
+            self.send_text(
+                chat_id,
+                "No results. Here I only search files shared in this chat or "
+                "sent by you - not the rest of this WhatsApp's documents.",
+            )
+            return
         self.send_results(chat_id, results)
 
     def handle_get(self, payload: dict) -> None:
@@ -95,7 +125,7 @@ class OpenWAAdapter(MessagingInterface):
             raise UnknownSession(f"no linked number for session {session_key!r}")
         self.session_key = session_key
 
-        results = _last_results.get((session_key, chat_id))
+        results = _last_results.get(_key(payload))
         if not results:
             self.send_text(chat_id, "Search first with /find <query>, then /get <number>.")
             return
@@ -103,9 +133,11 @@ class OpenWAAdapter(MessagingInterface):
         if not arg.isdigit() or not (1 <= int(arg) <= len(results)):
             self.send_text(chat_id, f"Usage: /get <1-{len(results)}> (from your last search).")
             return
-        # Re-check ownership at send time: the document is only sent if this
-        # number's owner can still see it.
-        found = service.get_document(results[int(arg) - 1], account["user_id"])
+        # Re-check at send time, against the same visibility rules the search
+        # used: owning the number is not enough if the asker is someone else.
+        found = service.get_document(
+            results[int(arg) - 1], account["user_id"], seen_by=_seen_by(payload)
+        )
         if found is None:
             self.send_text(chat_id, "That file isn't stored - re-share it, then /get again.")
             return

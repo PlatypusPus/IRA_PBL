@@ -13,9 +13,32 @@ from rank_bm25 import BM25Okapi
 from wadr.models import SearchResult
 from wadr.retrieval.filters import Filters, where
 
+# Ordinals and Roman numerals are the same thing as digits, and the two sides of
+# a search rarely agree on which to use: a college notice OCRs as "I and II Year
+# B.E." while the person looking for it types "1st and 2nd year". Both the query
+# and the documents go through this, so it matches in either direction.
+#
+# Bare "i", "v" and "x" are deliberately missing. "i" is the English pronoun -
+# it appears as a standalone token in 12 of the 44 documents measured here, so
+# mapping it to "1" would make a search for "1" hit a quarter of the corpus.
+# Multi-letter numerals have no such collision.
+_WORD_NUMBER = {
+    "first": "1", "second": "2", "third": "3", "fourth": "4",
+    "fifth": "5", "sixth": "6", "seventh": "7", "eighth": "8",
+    "ii": "2", "iii": "3", "iv": "4", "vi": "6", "vii": "7", "viii": "8", "ix": "9",
+}
+_ORDINAL = re.compile(r"^(\d+)(?:st|nd|rd|th)$")  # 1st -> 1, 22nd -> 22
+
+
+def _normalize(token: str) -> str:
+    if token in _WORD_NUMBER:
+        return _WORD_NUMBER[token]
+    digits = _ORDINAL.match(token)
+    return digits.group(1) if digits else token
+
 
 def _tokenize(text: str) -> list[str]:
-    return re.findall(r"\w+", text.lower())
+    return [_normalize(t) for t in re.findall(r"\w+", text.lower())]
 
 
 def search(

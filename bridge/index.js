@@ -61,6 +61,9 @@ async function onMessage(sessionKey, m) {
   const chatId = m.key.remoteJid;
   if (!chatId || chatId === 'status@broadcast' || !m.message) return;
   const sender = m.key.participant || chatId;
+  // Did the owner of this number type it, or somebody else in the chat? WADR
+  // only lets the owner search everything the number has ever received.
+  const fromMe = !!m.key.fromMe;
   // captioned documents nest the real content one level down
   const msg = m.message.documentWithCaptionMessage?.message || m.message;
   const media = msg.documentMessage || msg.imageMessage || msg.audioMessage;
@@ -85,9 +88,9 @@ async function onMessage(sessionKey, m) {
         console.log(`  -> ${filename}: ${duplicate ? 'already had it' : 'saved'}`);
       }
     } else if (text.startsWith('/find ')) {
-      await postWadr('/api/bridge/query', { session_key: sessionKey, chat_id: chatId, sender, text });
+      await postWadr('/api/bridge/query', { session_key: sessionKey, chat_id: chatId, sender, text, from_me: fromMe });
     } else if (text.startsWith('/get ')) {
-      await postWadr('/api/bridge/get', { session_key: sessionKey, chat_id: chatId, sender, text });
+      await postWadr('/api/bridge/get', { session_key: sessionKey, chat_id: chatId, sender, text, from_me: fromMe });
     }
   } catch (e) {
     console.error(`[${sessionKey}] message handling failed:`, e.message);
