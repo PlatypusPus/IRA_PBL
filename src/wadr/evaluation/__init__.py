@@ -1,1 +1,1 @@
-"""Evaluation harness: hand-written metrics, judgments loader, benchmark. TODO(WS3)."""
+"""Evaluation harness: hand-written metrics, judgments loader, benchmark."""

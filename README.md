@@ -31,25 +31,25 @@ workstream.
 +---------------------------------------------------+
 | ingestion/   router -> extractor -> dedupe(SHA256) |
 |              -> chunker                            |
-|              txt/pdf work; docx/ocr/asr = WS2      |
+|              txt/md/pdf/docx/image-OCR/voice-ASR   |
 +-------------------------+-------------------------+
                           v
 +---------------------------------------------------+
 | indexing/    embedder (Ollama, optional)           |     PostgreSQL 16
 |              lexical (tsvector)              ----> |     + pgvector
-|              inverted_index (stub, SHARED)         |
+|              inverted_index (from scratch)         |
 +-------------------------+-------------------------+
                           v
 +---------------------------------------------------+
-| retrieval/   bm25 | dense | tfidf* | boolean*      |
+| retrieval/   bm25 | dense | tfidf | boolean        |
 |                   \     /                          |
 |                RRF fusion (k=60)                   |
-|              filters*, recency boost*   (*=stub)   |
+|              filters, recency boost                |
 +-------------------------+-------------------------+
                           v
               results -> adapter.send_results()
 
-| evaluation/  P@k Recall F1 MRR nDCG -- by hand, WS3 |
+| evaluation/  P@k Recall F1 MRR nDCG -- by hand      |
 ```
 
 Two hard rules, enforced in review (details in
@@ -70,7 +70,13 @@ wraps it, so pip-installing the Python package alone is not enough:
 
 ```sh
 brew install tesseract          # macOS; Linux: apt install tesseract-ocr
+winget install UB-Mannheim.TesseractOCR   # Windows
 ```
+
+On Windows the installer does not add Tesseract to `PATH`. Either add
+`C:\Program Files\Tesseract-OCR` to it, or set `pytesseract.pytesseract.tesseract_cmd`
+to the full `tesseract.exe` path — otherwise `pytesseract` raises
+`TesseractNotFoundError` and every image is skipped.
 
 Voice-note transcription needs `ffmpeg`, plus a one-time download of the
 Whisper `base` model (~150 MB, cached under `~/.cache/huggingface`):
@@ -94,8 +100,9 @@ uv run wadr search "biryani" --model bm25
 uv run uvicorn wadr.api.app:app     # then GET http://localhost:8000/search?q=exam+schedule
 ```
 
-Models: `hybrid` (default) | `bm25` | `dense` | `tfidf`* | `boolean`*
-(* = stub, see [TODO.md](TODO.md)).
+Models: `hybrid` (default) | `bm25` | `dense` | `tfidf` | `boolean`.
+`tfidf` and `boolean` are the from-scratch course-lab implementations —
+no retrieval libraries, see their module docstrings.
 
 ## WhatsApp bridge
 
@@ -136,6 +143,17 @@ re-shared.
 uv run pytest          # skipped tests are the team checklist (test_todo_checklist.py)
 uv run ruff check .
 ```
+
+## Benchmark
+
+```sh
+uv run python -m wadr.evaluation.run_eval    # model x metric table for the report
+```
+
+Judgments live in `evaluation/queries.jsonl` (format in
+`src/wadr/evaluation/judgments.py`), keyed by `file_hash` so they survive a DB
+wipe and re-ingest. Metrics are hand-implemented in `evaluation/metrics.py` —
+no sklearn, no pytrec_eval.
 
 ## Configuration
 

@@ -49,12 +49,26 @@ def openwa_get(payload: dict):
 
 
 @app.get("/similar/{document_id}")
-def similar(document_id: int):
-    """TODO(WS4): more-like-this via pgvector distance to the doc's chunks (exclude itself)."""
-    raise HTTPException(501, "TODO(WS4): /similar endpoint")
+def similar(document_id: int, top_k: int = 5):
+    """More-like-this: pgvector neighbours of this document's chunks, itself excluded."""
+    try:
+        return [asdict(r) for r in service.similar(document_id, top_k=top_k)]
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
 
 
 @app.post("/feedback")
-def feedback():
-    """TODO(WS4): insert {query_text, document_id, action} into the feedback table."""
-    raise HTTPException(501, "TODO(WS4): feedback logging")
+def feedback(payload: dict):
+    """Log a relevance signal: {query_text, document_id, action}.
+
+    action is one of service.FEEDBACK_ACTIONS.
+    """
+    missing = {"query_text", "document_id", "action"} - set(payload)
+    if missing:
+        raise HTTPException(400, f"missing key(s): {', '.join(sorted(missing))}")
+    try:
+        return {"id": service.log_feedback(
+            payload["query_text"], int(payload["document_id"]), payload["action"]
+        )}
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e)) from e

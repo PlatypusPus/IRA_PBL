@@ -18,7 +18,21 @@ class MessagingInterface(ABC):
         self, file_bytes: bytes, filename: str, sender: str, chat: str, timestamp: datetime
     ) -> int | None:
         """Inbound document -> ingestion pipeline. Returns document id, or None if skipped."""
-        return router.ingest(file_bytes, filename, sender, chat, timestamp)
+        return router.ingest(
+            file_bytes, filename, sender, chat, timestamp,
+            on_standing_match=self.notify_standing_match,
+        )
+
+    # noqa B027: deliberately a no-op hook, not an abstract method - making it
+    # abstract would force every channel to implement a feature most do not have.
+    def notify_standing_match(  # noqa: B027
+        self, chat_id: str, query_text: str, filename: str
+    ) -> None:
+        """A newly ingested document matched a saved search.
+
+        Default: do nothing - the engine already logs it, which is all the CLI
+        needs. Channels that can push override this.
+        """
 
     @abstractmethod
     def send_results(self, chat_id: str, results: list[SearchResult]) -> None:

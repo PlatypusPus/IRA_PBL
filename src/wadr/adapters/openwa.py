@@ -70,6 +70,10 @@ class OpenWAAdapter(MessagingInterface):
         )
         return {"document_id": doc_id, "duplicate": duplicate}
 
+    def notify_standing_match(self, chat_id: str, query_text: str, filename: str) -> None:
+        """Push a saved-search hit into the chat that registered it."""
+        self.send_text(chat_id, f'New document matching "{query_text}": {filename}')
+
     def handle_query(self, payload: dict) -> None:
         """A '/find <query>' message: search, remember the hits for /get, reply."""
         chat_id = payload["chat_id"]

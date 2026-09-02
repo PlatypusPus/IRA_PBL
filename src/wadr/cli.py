@@ -3,6 +3,7 @@
 
 import argparse
 import logging
+import sys
 from pathlib import Path
 
 from wadr.adapters.cli_adapter import CLIAdapter
@@ -13,6 +14,13 @@ MODELS = ["hybrid", "bm25", "dense", "tfidf", "boolean"]
 
 
 def main() -> None:
+    # Windows consoles default to cp1252, and we print arbitrary document text:
+    # one PDF bullet (U+F0B7) was enough to crash `wadr search` with a
+    # UnicodeEncodeError. errors="replace" means an odd glyph degrades to "?"
+    # instead of killing the command mid-results.
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(prog="wadr", description="WhatsApp Document Retrieval")
     sub = parser.add_subparsers(dest="command", required=True)

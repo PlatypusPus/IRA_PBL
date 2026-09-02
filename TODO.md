@@ -1,10 +1,11 @@
 # WADR — Team Assignment Sheet
 
-The foundation is done: `wadr ingest` / `wadr search` work end-to-end with
-BM25 + dense retrieval fused by RRF (BM25-only if Ollama is down). Everything
-below is yours. Every stub raises `NotImplementedError` and has a matching
-**skipped test in `tests/test_todo_checklist.py`** — delete the skip marker as
-you implement; when the file is green, the project is done.
+**All workstreams are implemented and `tests/test_todo_checklist.py` is fully
+green — 51 passed, 0 skipped.** No `NotImplementedError` stubs remain in `src/`.
+What is left is judgement work, not code: review the relevance grades in
+`evaluation/queries.jsonl` and extend it from 24 queries toward ~40.
+
+The history below is kept as the record of who built what, for the report.
 
 Rules that bind everyone are in [CONTRIBUTING.md](CONTRIBUTING.md):
 the engine never imports adapters, and classical IR modules stay library-free.
@@ -84,12 +85,15 @@ point** — and produce the benchmark table.
 `judgments.py`).
 
 **Tasks (dependency order):**
-- [ ] ~40 queries in `queries.jsonl` over the shared test corpus; include phrase queries and filter-style queries
-- [ ] Grade relevance 0–3 per (query, document), keyed by `file_hash` so judgments survive re-ingest
-- [ ] `metrics.py`: P@k, R@k, F1@k, reciprocal rank, nDCG@k — pure Python, formula comments
-- [ ] `judgments.py` loader with validation (unique qids, grades in 1..3)
-- [ ] `run_eval.py`: every model × every query, macro-average, print the markdown table
-- [ ] Unskip the WS3 tests (they encode worked examples — your implementations must reproduce them)
+- [~] ~40 queries in `queries.jsonl` over the shared test corpus; include phrase
+      queries and filter-style queries. **24 written** in `evaluation/queries.jsonl`,
+      graded by one person from the document text — review the grades and extend
+      to ~40. q19-q24 are filter-style; all five models honour filters now.
+- [x] Grade relevance 0–3 per (query, document), keyed by `file_hash` so judgments survive re-ingest
+- [x] `metrics.py`: P@k, R@k, F1@k, reciprocal rank, nDCG@k — pure Python, formula comments
+- [x] `judgments.py` loader with validation (unique qids, grades in 1..3)
+- [x] `run_eval.py`: every model × every query, macro-average, print the markdown table
+- [x] Unskip the WS3 tests (they encode worked examples — your implementations must reproduce them)
 
 **Definition of done:** `uv run python -m wadr.evaluation.run_eval` prints the
 model × metric table; that table goes in the report; WS3 tests green.
@@ -118,10 +122,10 @@ standing-query hook in `ingestion/router.py` (marked TODO(WS4)).
       **w = 0.15, half-life = 30 days.** RRF scores are flat — rank 1 beats
       rank 10 by only 1.15x and rank 30 by 1.48x — so 0.15 lifts a same-day
       re-share about ten places; 0.5 overruled relevance entirely.
-- [ ] `/similar/{document_id}`: pgvector neighbors of the doc's chunks, excluding itself
-- [ ] `/feedback`: insert into the `feedback` table
-- [ ] Standing queries: after ingest, match the new doc against `standing_queries` and push via the adapter (CLI print is fine until WS1 lands)
-- [ ] Unskip the WS4 tests
+- [x] `/similar/{document_id}`: pgvector neighbors of the doc's chunks, excluding itself
+- [x] `/feedback`: insert into the `feedback` table
+- [x] Standing queries: after ingest, match the new doc against `standing_queries` and push via the adapter (CLI print is fine until WS1 lands)
+- [x] Unskip the WS4 tests
 
 **Definition of done:** `wadr search "notes from:cli after:2026-01-01 type:pdf"`
 filters correctly; re-sharing a document today visibly lifts its hybrid rank;
@@ -142,10 +146,10 @@ member must be able to explain all three.
 **Files:** `src/wadr/indexing/inverted_index.py`,
 `src/wadr/retrieval/boolean_model.py`, `src/wadr/retrieval/tfidf_model.py`.
 
-- [ ] `inverted_index.py`: ~100 readable lines, dict term → sorted posting list, AND/OR/NOT (spec in the module docstring)
-- [ ] `boolean_model.py`: build the index from `documents.extracted_text`, evaluate the expression, wrap as `SearchResult`
-- [ ] `tfidf_model.py`: log-tf × idf, L2 normalize, cosine — numpy only, formula comments
-- [ ] Unskip the SHARED tests; `wadr search "cats AND dogs" --model boolean` works
+- [x] `inverted_index.py`: ~100 readable lines, dict term → sorted posting list, AND/OR/NOT (spec in the module docstring)
+- [x] `boolean_model.py`: build the index from `documents.extracted_text`, evaluate the expression, wrap as `SearchResult`
+- [x] `tfidf_model.py`: log-tf × idf, L2 normalize, cosine — numpy only, formula comments
+- [x] Unskip the SHARED tests; `wadr search "cats AND dogs" --model boolean` works
 
 **Syllabus modules:** Boolean model & inverted index construction; vector
 space model (TF-IDF, cosine similarity).

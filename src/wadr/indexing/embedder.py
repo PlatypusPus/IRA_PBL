@@ -16,7 +16,11 @@ log = logging.getLogger(__name__)
 # connection before falling back. That was 2.3s on every embed, i.e. on every
 # ingest and every /find. Measured: 2.24s -> 0.18s.
 OLLAMA_URL = os.environ.get("WADR_OLLAMA_URL", "http://127.0.0.1:11434")
-MODEL = "nomic-embed-text"
+# Overridable because `ollama pull` does not always create the :latest tag -
+# a pull can land as nomic-embed-text:v1.5, which "nomic-embed-text" (i.e.
+# :latest) then fails to resolve. Either `ollama cp <tag> nomic-embed-text:latest`
+# or set WADR_EMBED_MODEL to the tag you actually have.
+MODEL = os.environ.get("WADR_EMBED_MODEL", "nomic-embed-text")
 EMBEDDING_DIM = 768  # must match vector(768) in schema.sql
 
 _warned = False
@@ -34,6 +38,18 @@ def embed(texts: list[str]) -> list[list[float]] | None:
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             return json.load(resp)["embeddings"]
+    except urllib.error.HTTPError as e:
+        # Ollama answered and refused. Almost always a missing model - saying
+        # "unreachable" here sends people to debug a server that is running fine.
+        if not _warned:
+            log.warning(
+                "Ollama at %s rejected the request (HTTP %s: %s) - dense search "
+                "disabled, BM25 only. Model %r is probably not pulled: check "
+                "`ollama list`, then `ollama pull %s` or set WADR_EMBED_MODEL.",
+                OLLAMA_URL, e.code, e.read().decode(errors="replace")[:200], MODEL, MODEL,
+            )
+            _warned = True
+        return None
     except (urllib.error.URLError, TimeoutError, KeyError) as e:
         if not _warned:
             log.warning(

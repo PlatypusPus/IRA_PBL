@@ -20,18 +20,37 @@ EXTRACTORS = {
     ".txt": text.extract,
     ".md": text.extract,
     ".pdf": pdf.extract,
-    ".docx": docx.extract,        # TODO(WS2)
-    ".png": image_ocr.extract,    # TODO(WS2)
-    ".jpg": image_ocr.extract,    # TODO(WS2)
-    ".jpeg": image_ocr.extract,   # TODO(WS2)
-    ".ogg": audio_asr.extract,    # TODO(WS2) - WhatsApp voice notes
-    ".opus": audio_asr.extract,   # TODO(WS2)
-    ".m4a": audio_asr.extract,    # TODO(WS2)
+    ".docx": docx.extract,
+    ".png": image_ocr.extract,
+    ".jpg": image_ocr.extract,
+    ".jpeg": image_ocr.extract,
+    ".ogg": audio_asr.extract,    # WhatsApp voice notes
+    ".opus": audio_asr.extract,
+    ".m4a": audio_asr.extract,
 }
 
 
+def _standing_matches(conn, doc_id: int) -> list[tuple[str, str]]:
+    """(chat_id, query_text) for every saved search this document satisfies.
+
+    Uses the chunks' tsvector and its GIN index, so it is one indexed query
+    rather than one search per standing query.
+    """
+    return conn.execute(
+        "SELECT sq.chat_id, sq.query_text FROM standing_queries sq"
+        " WHERE EXISTS (SELECT 1 FROM chunks c WHERE c.document_id = %s"
+        "               AND c.tsv @@ websearch_to_tsquery('english', sq.query_text))",
+        (doc_id,),
+    ).fetchall()
+
+
 def ingest(
-    file_bytes: bytes, filename: str, sender: str, chat: str, sent_at: datetime
+    file_bytes: bytes,
+    filename: str,
+    sender: str,
+    chat: str,
+    sent_at: datetime,
+    on_standing_match=None,
 ) -> int | None:
     """Ingest one file; returns its document id, or None if skipped.
 
@@ -53,8 +72,12 @@ def ingest(
 
         try:
             extracted = extractor(file_bytes)
-        except NotImplementedError as e:
-            log.warning("%s: %s - skipped", filename, e)
+        except Exception as e:  # noqa: BLE001 - deliberately broad
+            # Extractors now shell out to tesseract/ffmpeg and parse whatever
+            # bytes a chat sends. A corrupt photo, a missing system binary or a
+            # NotImplementedError stub must skip ONE file, never abort a folder
+            # ingest or turn the WhatsApp webhook into a 500.
+            log.warning("%s: extraction failed (%s: %s) - skipped", filename, type(e).__name__, e)
             return None
 
         mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
@@ -64,8 +87,17 @@ def ingest(
         pieces = chunker.chunk(extracted)
         embeddings = embedder.embed(pieces) if pieces else []
         lexical.index_chunks(conn, doc_id, pieces, embeddings)
-        # TODO(WS4): standing-query matching - run the new document against
-        # standing_queries and push hits to their chat_id via the active
-        # adapter's send_results().
         log.info("%s: ingested as document %d (%d chunks)", filename, doc_id, len(pieces))
+
+        # Saved searches. The engine finds the matches and hands them to a
+        # callback; it must not know which channel delivers them (see the hard
+        # rule in adapters/base.py). A failing notification must not undo an
+        # otherwise good ingest, so each one is guarded.
+        for chat_id, query_text in _standing_matches(conn, doc_id):
+            log.info("standing query %r matched %s -> %s", query_text, filename, chat_id)
+            if on_standing_match is not None:
+                try:
+                    on_standing_match(chat_id, query_text, filename)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("standing-query notify failed for %s: %s", chat_id, e)
         return doc_id

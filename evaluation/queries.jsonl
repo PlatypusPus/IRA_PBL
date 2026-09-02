@@ -1,0 +1,32 @@
+# WADR relevance judgments. One JSON object per line; format documented in
+# src/wadr/evaluation/judgments.py. Grades: 3 = the document the user wanted,
+# 2 = clearly on topic, 1 = marginally related. Omit grade-0 documents.
+#
+# STARTER SET - 24 of the ~40 TODO.md asks for, graded from the document text
+# by one person. Review these grades and extend before quoting the numbers in
+# the report. q19-q24 are filter-style (type:/from:/in:); all five models now
+# honour filters, so these measure retrieval rather than plumbing.
+{"qid": "q01", "query": "biryani recipe", "relevant": {"ce4380f5ff46a9ff4adc522567cfa4dc290378e7159b8f54fed543e916476b0b": 3}}
+{"qid": "q02", "query": "chicken marinade curd fried onions", "relevant": {"ce4380f5ff46a9ff4adc522567cfa4dc290378e7159b8f54fed543e916476b0b": 3}}
+{"qid": "q03", "query": "exam timetable", "relevant": {"8b273abdd9293d0e88f4b84ac326601538a90521121073a52f38e0b3bc4bafef": 3}}
+{"qid": "q04", "query": "end semester examination hall", "relevant": {"8b273abdd9293d0e88f4b84ac326601538a90521121073a52f38e0b3bc4bafef": 3}}
+{"qid": "q05", "query": "internship offer", "relevant": {"730514ec86288bdfa4ffd14a8da24c7fb0af92c1a2b5e4b5f8161c914c4fb52c": 3}}
+{"qid": "q06", "query": "software engineering intern", "relevant": {"730514ec86288bdfa4ffd14a8da24c7fb0af92c1a2b5e4b5f8161c914c4fb52c": 3}}
+{"qid": "q07", "query": "tf-idf weighting", "relevant": {"1cc90274b05fe6f8e3dc937a5930f3266777a50cf0858e587b988982bf67ef13": 3, "86662947ab9292dc8ac87a86ab3110f5e2107aef892b2ac08e4293d3c19e366b": 1}}
+{"qid": "q08", "query": "vector space model", "relevant": {"1cc90274b05fe6f8e3dc937a5930f3266777a50cf0858e587b988982bf67ef13": 3}}
+{"qid": "q09", "query": "reciprocal rank fusion", "relevant": {"86662947ab9292dc8ac87a86ab3110f5e2107aef892b2ac08e4293d3c19e366b": 3, "1cc90274b05fe6f8e3dc937a5930f3266777a50cf0858e587b988982bf67ef13": 1}}
+{"qid": "q10", "query": "meeting minutes decisions", "relevant": {"86662947ab9292dc8ac87a86ab3110f5e2107aef892b2ac08e4293d3c19e366b": 3}}
+{"qid": "q11", "query": "direct and indirect speech", "relevant": {"fcd9e042c1009eda1d6593ff9eaeded7aa2b1e3f93dd0143734429286e43b717": 3}}
+{"qid": "q12", "query": "reported speech grammar", "relevant": {"fcd9e042c1009eda1d6593ff9eaeded7aa2b1e3f93dd0143734429286e43b717": 3}}
+{"qid": "q13", "query": "holiday declaration eid", "relevant": {"04c0b47ebfa6ec876d66b7e365e582ee562cb2d998d3fbd4f19fe91bcc346742": 3}}
+{"qid": "q14", "query": "college principal notice", "relevant": {"04c0b47ebfa6ec876d66b7e365e582ee562cb2d998d3fbd4f19fe91bcc346742": 3}}
+{"qid": "q15", "query": "carbon emissions", "relevant": {"4a8d98bab5e85cc8dcc0d05cab88d840e1e7baf2494148b707ef7d57bbea3a9f": 3}}
+{"qid": "q16", "query": "facility electricity kWh records", "relevant": {"4a8d98bab5e85cc8dcc0d05cab88d840e1e7baf2494148b707ef7d57bbea3a9f": 3}}
+{"qid": "q17", "query": "github profile recruiters", "relevant": {"efe36579e109a130f5a9f58e4a90b312ff256c29490b40b9db96deb589c34270": 3}}
+{"qid": "q18", "query": "prompts to improve my profile", "relevant": {"efe36579e109a130f5a9f58e4a90b312ff256c29490b40b9db96deb589c34270": 3}}
+{"qid": "q19", "query": "weighting type:txt", "relevant": {"1cc90274b05fe6f8e3dc937a5930f3266777a50cf0858e587b988982bf67ef13": 3, "86662947ab9292dc8ac87a86ab3110f5e2107aef892b2ac08e4293d3c19e366b": 1}}
+{"qid": "q20", "query": "biryani type:txt", "relevant": {"ce4380f5ff46a9ff4adc522567cfa4dc290378e7159b8f54fed543e916476b0b": 3}}
+{"qid": "q21", "query": "speech type:pdf", "relevant": {"fcd9e042c1009eda1d6593ff9eaeded7aa2b1e3f93dd0143734429286e43b717": 3}}
+{"qid": "q22", "query": "declaration type:pdf", "relevant": {"04c0b47ebfa6ec876d66b7e365e582ee562cb2d998d3fbd4f19fe91bcc346742": 3}}
+{"qid": "q23", "query": "timetable from:cli", "relevant": {"8b273abdd9293d0e88f4b84ac326601538a90521121073a52f38e0b3bc4bafef": 3}}
+{"qid": "q24", "query": "fusion in:cli", "relevant": {"86662947ab9292dc8ac87a86ab3110f5e2107aef892b2ac08e4293d3c19e366b": 3}}

@@ -1,1 +1,2 @@
-"""Extractors: pure functions `bytes -> str`. Working: text, pdf. TODO(WS2): docx, ocr, asr."""
+"""Extractors: pure functions `bytes -> str` for text, pdf, docx, images (OCR)
+and audio (ASR). A failing extractor skips one file - see ingestion/router.py."""
