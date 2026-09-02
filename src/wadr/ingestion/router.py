@@ -50,6 +50,7 @@ def ingest(
     sender: str,
     chat: str,
     sent_at: datetime,
+    account_id: int | None = None,
     on_standing_match=None,
 ) -> int | None:
     """Ingest one file; returns its document id, or None if skipped.
@@ -66,7 +67,7 @@ def ingest(
     with get_conn() as conn:
         doc_id = dedupe.find_document(conn, hash_)
         if doc_id is not None:
-            dedupe.add_sighting(conn, doc_id, sender, chat, sent_at)
+            dedupe.add_sighting(conn, doc_id, sender, chat, sent_at, account_id)
             log.info("%s: duplicate of document %d, sighting recorded", filename, doc_id)
             return doc_id
 
@@ -82,7 +83,7 @@ def ingest(
 
         mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         doc_id = dedupe.insert_document(conn, hash_, filename, mime, extracted, file_bytes)
-        dedupe.add_sighting(conn, doc_id, sender, chat, sent_at)
+        dedupe.add_sighting(conn, doc_id, sender, chat, sent_at, account_id)
 
         pieces = chunker.chunk(extracted)
         embeddings = embedder.embed(pieces) if pieces else []

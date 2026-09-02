@@ -22,10 +22,16 @@ class Filters:
     before: date | None = None
     after: date | None = None
     doc_type: str | None = None
+    # Tenancy, not a user-typed filter: the ids of the WhatsApp numbers the
+    # searcher has linked. service.search() always sets this, so a document is
+    # only reachable if one of your own numbers received it. An empty list
+    # matches nothing, which is the correct answer for "no numbers linked yet".
+    account_ids: list[int] | None = None
 
-    def __bool__(self) -> bool:
-        """True when anything is actually constrained - lets callers skip the SQL."""
-        return any(vars(self).values())
+    # No __bool__ here on purpose. It used to return any(vars(...)), which made
+    # Filters(account_ids=[]) falsy - and where() skipped the predicate entirely,
+    # so a user with no linked numbers would have seen EVERY document in the
+    # database. Tenancy must never ride on a truthiness shortcut.
 
 
 # \b keeps "berlin:x" from matching "in:"; unknown prefixes fall through as text.
@@ -62,10 +68,16 @@ def where(f: Filters | None) -> tuple[str, list]:
     Returns ("", []) when nothing is filtered, else (" AND ...", params) ready
     to append to an existing WHERE-less or WHERE-ful query via the caller.
     """
-    if not f:
+    if f is None:
         return "", []
     clauses: list[str] = []
     params: list = []
+    if f.account_ids is not None:
+        clauses.append(
+            "EXISTS (SELECT 1 FROM sightings s WHERE s.document_id = d.id"
+            " AND s.account_id = ANY(%s))"
+        )
+        params.append(f.account_ids)
     if f.doc_type:
         # mime suffix OR filename extension: "pdf" -> application/pdf, but
         # "docx" only ever shows up in the filename (its mime ends in "document").

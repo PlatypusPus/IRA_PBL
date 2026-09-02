@@ -1,45 +1,124 @@
-"""Model dispatch + hybrid orchestration - the one search entry point for CLI and API."""
+"""Search entry point.
+
+Ranking is BM25 (rank_bm25) fused with dense embeddings (nomic-embed-text via
+Ollama) by Reciprocal Rank Fusion, then nudged by recency. Both are mature,
+pretrained components - this product has no business reimplementing retrieval
+models. Hybrid is the default and the only one the UI exposes; bm25 and dense
+stay reachable for debugging and for when Ollama is not running.
+
+Every search is scoped to the caller's own linked WhatsApp numbers. That is
+enforced here, in one place, rather than trusted to callers.
+"""
 
 import logging
 from dataclasses import replace
 
 import psycopg
 
+from wadr.accounts import account_ids
 from wadr.db import get_conn
 from wadr.models import SearchResult
-from wadr.retrieval import bm25_model, boolean_model, dense_model, filters, fusion, tfidf_model
+from wadr.retrieval import bm25_model, dense_model, filters, fusion
 
 log = logging.getLogger(__name__)
 
+MODELS = ("hybrid", "bm25", "dense")
+
+# Dense retrieval has no notion of "no answer" - it always returns the nearest
+# k vectors, however far away. Measured on this embedder, real matches and pure
+# noise OVERLAP: "carbon emissions" correctly finds a kWh table at 0.438 while
+# "quantum chromodynamics" hits an unrelated document at 0.454. So a score
+# floor cannot separate them without throwing away real answers. Instead we
+# keep the result and mark it weak, and the UI says "closest I found" rather
+# than claiming a match. Above this, a semantic-only hit is trustworthy.
+DENSE_CONFIDENT = 0.55
 CANDIDATES = 30  # chunk-level pool retrieved before collapsing to one hit per document
 
 
-def search(query: str, model: str = "hybrid", top_k: int = 5) -> list[SearchResult]:
+def search(
+    query: str, user_id: int, model: str = "hybrid", top_k: int = 5
+) -> list[SearchResult]:
+    """Search the documents this user's numbers have received."""
     query, f = filters.parse(query)  # strips from:/in:/before:/after:/type:
     with get_conn() as conn:
-        if model == "boolean":
-            return boolean_model.search(conn, query, top_k, f)
+        f = replace(f, account_ids=account_ids(conn, user_id))
+        if not f.account_ids:
+            return []  # no numbers linked yet: nothing of yours to search
         if model == "bm25":
             hits = bm25_model.search(conn, query, CANDIDATES, f)
-        elif model == "tfidf":
-            # chunk-level like bm25/dense, so it takes the same path: collapse to
-            # one hit per document and enrich. Boolean stays separate above - it
-            # is document-level and unranked, with no chunk to point at.
-            hits = tfidf_model.search(conn, query, CANDIDATES, f)
         elif model == "dense":
             hits = dense_model.search(conn, query, CANDIDATES, f)
         elif model == "hybrid":
             hits = _hybrid(conn, query, CANDIDATES, f)
         else:
             raise ValueError(f"unknown model: {model}")
-        # One hit per document (the top chunk), then enrich for display.
         results = _one_per_document(hits)[:top_k]
         _enrich(conn, query, results)
         return results
 
 
+def similar(document_id: int, user_id: int, top_k: int = 5) -> list[SearchResult]:
+    """More-like-this: nearest neighbours of a document's chunks, itself excluded.
+
+    Scoped both ways - you must be able to see the source document, and only
+    documents you can see come back.
+    """
+    with get_conn() as conn:
+        mine = account_ids(conn, user_id)
+        if not mine:
+            raise LookupError(f"no document {document_id}")
+        visible = conn.execute(
+            "SELECT 1 FROM sightings WHERE document_id = %s AND account_id = ANY(%s) LIMIT 1",
+            (document_id, mine),
+        ).fetchone()
+        if visible is None:
+            # Same error as "does not exist": whether a document you cannot see
+            # exists is not your business.
+            raise LookupError(f"no document {document_id}")
+        rows = conn.execute(
+            "SELECT * FROM ("
+            "  SELECT DISTINCT ON (c2.document_id)"
+            "         c2.id, c2.document_id, c2.text, d.filename,"
+            "         1 - (c1.embedding <=> c2.embedding) AS score"
+            "    FROM chunks c1"
+            "    JOIN chunks c2 ON c2.document_id <> c1.document_id"
+            "    JOIN documents d ON d.id = c2.document_id"
+            "   WHERE c1.document_id = %s"
+            "     AND c1.embedding IS NOT NULL AND c2.embedding IS NOT NULL"
+            "     AND EXISTS (SELECT 1 FROM sightings s"
+            "                  WHERE s.document_id = d.id AND s.account_id = ANY(%s))"
+            "   ORDER BY c2.document_id, c1.embedding <=> c2.embedding"
+            ") best ORDER BY score DESC LIMIT %s",
+            (document_id, mine, top_k),
+        ).fetchall()
+        return [
+            SearchResult(
+                chunk_id=r[0], document_id=r[1], filename=r[3],
+                snippet=r[2][:200], score=float(r[4]),
+            )
+            for r in rows
+        ]
+
+
+def get_document(document_id: int, user_id: int) -> tuple[str, str, bytes] | None:
+    """(filename, mime_type, content) for download, or None if not yours."""
+    with get_conn() as conn:
+        mine = account_ids(conn, user_id)
+        if not mine:
+            return None
+        row = conn.execute(
+            "SELECT d.filename, d.mime_type, d.content FROM documents d"
+            " WHERE d.id = %s AND EXISTS (SELECT 1 FROM sightings s"
+            "   WHERE s.document_id = d.id AND s.account_id = ANY(%s))",
+            (document_id, mine),
+        ).fetchone()
+    if row is None or row[2] is None:
+        return None
+    return row[0], row[1], bytes(row[2])
+
+
 def _hybrid(
-    conn: psycopg.Connection, query: str, limit: int, f: filters.Filters | None = None
+    conn: psycopg.Connection, query: str, limit: int, f: filters.Filters
 ) -> list[SearchResult]:
     """BM25 + dense fused with RRF (k=60), then nudged by recency; degrades to
     BM25-only when the embedder is unavailable (dense returns [] and warns)."""
@@ -48,6 +127,8 @@ def _hybrid(
     if not den:
         return lex[:limit]
     by_chunk = {r.chunk_id: r for r in [*den, *lex]}
+    lexical_hits = {r.chunk_id for r in lex}
+    dense_score = {r.chunk_id: r.score for r in den}
     fused = fusion.rrf([[r.chunk_id for r in lex], [r.chunk_id for r in den]])
     # Recency applies to the whole candidate pool, before the cut - boosting
     # only the survivors could never pull a fresh doc into the top-k.
@@ -56,7 +137,15 @@ def _hybrid(
         fused,
         {cid: latest[r.document_id] for cid, r in by_chunk.items() if r.document_id in latest},
     )
-    return [replace(by_chunk[cid], score=score) for cid, score in fused[:limit]]
+    return [
+        replace(
+            by_chunk[cid],
+            score=score,
+            # no keyword matched, and the vector was only loosely close
+            weak=cid not in lexical_hits and dense_score.get(cid, 0.0) < DENSE_CONFIDENT,
+        )
+        for cid, score in fused[:limit]
+    ]
 
 
 def _latest_sightings(conn: psycopg.Connection, doc_ids: list[int]) -> dict:
@@ -89,8 +178,8 @@ def _enrich(conn: psycopg.Connection, query: str, results: list[SearchResult]) -
         return
     chunk_ids = [r.chunk_id for r in results]
     doc_ids = [r.document_id for r in results]
-    # keyword-in-context snippet, *bold* around matches (renders bold in WhatsApp);
-    # ts_headline falls back to the start of the chunk when nothing matches.
+    # keyword-in-context snippet, *bold* around matches; ts_headline falls back
+    # to the start of the chunk when nothing matches.
     snippets = dict(
         conn.execute(
             "SELECT id, ts_headline('english', text,"
@@ -100,7 +189,6 @@ def _enrich(conn: psycopg.Connection, query: str, results: list[SearchResult]) -
             (query, chunk_ids),
         ).fetchall()
     )
-    # newest sighting per document: who shared it and when
     sightings = {
         row[0]: (row[1], row[2])
         for row in conn.execute(
@@ -113,71 +201,3 @@ def _enrich(conn: psycopg.Connection, query: str, results: list[SearchResult]) -
     for r in results:
         r.snippet = snippets.get(r.chunk_id, r.snippet).strip()
         r.sender, r.sent_at = sightings.get(r.document_id, (None, None))
-
-
-# Matches the `action` values the feedback table was designed for; anything else
-# is a client bug and is rejected rather than silently logged as noise.
-FEEDBACK_ACTIONS = ("opened", "thumbs_up", "thumbs_down")
-
-
-def similar(document_id: int, top_k: int = 5) -> list[SearchResult]:
-    """Documents whose chunks sit closest to this document's chunks in the
-    embedding space - "more like this", the query being a document.
-
-    Raises LookupError if the document does not exist. Returns [] when nothing
-    is embedded (Ollama was down at ingest time), same as dense search.
-
-    ponytail: an all-pairs chunk comparison, which is O(chunks_in_doc x corpus).
-    Fine for a course corpus; past ~10k chunks give `chunks` an HNSW index and
-    compare against the document's mean vector instead.
-    """
-    with get_conn() as conn:
-        if conn.execute(
-            "SELECT 1 FROM documents WHERE id = %s", (document_id,)
-        ).fetchone() is None:
-            raise LookupError(f"no document {document_id}")
-        rows = conn.execute(
-            # DISTINCT ON keeps the single closest chunk per neighbouring
-            # document, then the outer query re-sorts those by similarity.
-            "SELECT * FROM ("
-            "  SELECT DISTINCT ON (c2.document_id)"
-            "         c2.id, c2.document_id, c2.text, d.filename,"
-            "         1 - (c1.embedding <=> c2.embedding) AS score"
-            "    FROM chunks c1"
-            "    JOIN chunks c2 ON c2.document_id <> c1.document_id"
-            "    JOIN documents d ON d.id = c2.document_id"
-            "   WHERE c1.document_id = %s"
-            "     AND c1.embedding IS NOT NULL AND c2.embedding IS NOT NULL"
-            "   ORDER BY c2.document_id, c1.embedding <=> c2.embedding"
-            ") best ORDER BY score DESC LIMIT %s",
-            (document_id, top_k),
-        ).fetchall()
-        return [
-            SearchResult(
-                chunk_id=r[0], document_id=r[1], filename=r[3],
-                snippet=r[2][:200], score=float(r[4]),
-            )
-            for r in rows
-        ]
-
-
-def log_feedback(query_text: str, document_id: int, action: str) -> int:
-    """Record a relevance signal; returns the new feedback row id.
-
-    Raises ValueError for an unknown action or an unknown document - this is a
-    trust boundary, the payload comes straight off an HTTP request.
-    """
-    if action not in FEEDBACK_ACTIONS:
-        raise ValueError(f"action must be one of {FEEDBACK_ACTIONS}, got {action!r}")
-    if not query_text or not query_text.strip():
-        raise ValueError("query_text must not be empty")
-    with get_conn() as conn:
-        if conn.execute(
-            "SELECT 1 FROM documents WHERE id = %s", (document_id,)
-        ).fetchone() is None:
-            raise ValueError(f"no document {document_id}")
-        return conn.execute(
-            "INSERT INTO feedback (query_text, document_id, action)"
-            " VALUES (%s, %s, %s) RETURNING id",
-            (query_text, document_id, action),
-        ).fetchone()[0]

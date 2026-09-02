@@ -40,5 +40,13 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's whole dependency system is calls-in-defaults; B008 is a false
+# positive on every route we have.
+extend-immutable-calls = [
+    "fastapi.Body", "fastapi.Cookie", "fastapi.Depends",
+    "fastapi.Header", "fastapi.Path", "fastapi.Query",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

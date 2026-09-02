@@ -13,6 +13,9 @@ class SearchResult:
     score: float
     sender: str | None = None       # who shared it (from the newest sighting)
     sent_at: datetime | None = None  # when it was last shared
+    # True when nothing lexical matched and the embedding was only vaguely
+    # close - a guess worth showing, not a hit worth asserting.
+    weak: bool = False
 
     def provenance(self) -> str:
         """Human 'who + when' suffix for display; '' when unknown."""

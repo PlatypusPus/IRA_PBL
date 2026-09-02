@@ -1,23 +1,21 @@
-"""wadr command-line entry point.
+"""wadr command-line entry point - operator tasks only.
+
+The product surface is the web app and WhatsApp itself; this exists to set up
+a database and, when needed, create the first account.
 """
 
 import argparse
+import getpass
 import logging
 import sys
-from pathlib import Path
 
-from wadr.adapters.cli_adapter import CLIAdapter
+from wadr import accounts
 from wadr.migrate import migrate
-from wadr.retrieval import service
-
-MODELS = ["hybrid", "bm25", "dense", "tfidf", "boolean"]
 
 
 def main() -> None:
-    # Windows consoles default to cp1252, and we print arbitrary document text:
-    # one PDF bullet (U+F0B7) was enough to crash `wadr search` with a
-    # UnicodeEncodeError. errors="replace" means an odd glyph degrades to "?"
-    # instead of killing the command mid-results.
+    # Windows consoles default to cp1252 and we print arbitrary text; one odd
+    # glyph is otherwise enough to kill a command with UnicodeEncodeError.
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")
 
@@ -27,27 +25,21 @@ def main() -> None:
 
     sub.add_parser("migrate", help="apply pending schema migrations (migrations/*.sql)")
 
-    p_ingest = sub.add_parser("ingest", help="ingest every file in a folder")
-    p_ingest.add_argument("folder", type=Path)
-
-    p_search = sub.add_parser("search", help="search ingested documents")
-    p_search.add_argument("query")
-    p_search.add_argument("--model", choices=MODELS, default="hybrid")
-    p_search.add_argument("--top-k", type=int, default=5)
+    p_user = sub.add_parser("adduser", help="create an account from the terminal")
+    p_user.add_argument("email")
 
     args = parser.parse_args()
-    adapter = CLIAdapter()
+
     if args.command == "migrate":
         applied = migrate()
         print(f"Applied: {', '.join(applied)}" if applied else "Database up to date.")
-    elif args.command == "ingest":
-        n = adapter.ingest_folder(args.folder)
-        print(f"Processed {n} files.")
-    else:
-        try:
-            results = service.search(args.query, model=args.model, top_k=args.top_k)
-        except NotImplementedError as e:
-            raise SystemExit(f"Model not implemented yet ({e}) - see TODO.md") from e
-        except ValueError as e:  # malformed filter token, e.g. before:soon
-            raise SystemExit(str(e)) from e
-        adapter.send_results("local", results)
+        return
+
+    password = getpass.getpass("Password: ")
+    if password != getpass.getpass("Repeat: "):
+        raise SystemExit("passwords do not match")
+    try:
+        user_id = accounts.sign_up(args.email, password)
+    except accounts.AuthError as e:
+        raise SystemExit(str(e)) from e
+    print(f"Created user {user_id} ({args.email}). Sign in on the web app to link a number.")

@@ -15,11 +15,17 @@ class MessagingInterface(ABC):
     """A messaging channel that hands documents in and carries results out."""
 
     def on_document(
-        self, file_bytes: bytes, filename: str, sender: str, chat: str, timestamp: datetime
+        self,
+        file_bytes: bytes,
+        filename: str,
+        sender: str,
+        chat: str,
+        timestamp: datetime,
+        account_id: int | None = None,
     ) -> int | None:
         """Inbound document -> ingestion pipeline. Returns document id, or None if skipped."""
         return router.ingest(
-            file_bytes, filename, sender, chat, timestamp,
+            file_bytes, filename, sender, chat, timestamp, account_id,
             on_standing_match=self.notify_standing_match,
         )
 

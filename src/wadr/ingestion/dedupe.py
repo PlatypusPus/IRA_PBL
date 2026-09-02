@@ -33,9 +33,17 @@ def insert_document(
 
 
 def add_sighting(
-    conn: psycopg.Connection, document_id: int, sender: str, chat: str, sent_at: datetime
+    conn: psycopg.Connection,
+    document_id: int,
+    sender: str,
+    chat: str,
+    sent_at: datetime,
+    account_id: int | None = None,
 ) -> None:
+    """Record that a document was seen. account_id is the linked WhatsApp number
+    that received it, and is what makes the document visible to its owner."""
     conn.execute(
-        "INSERT INTO sightings (document_id, sender, chat, sent_at) VALUES (%s, %s, %s, %s)",
-        (document_id, sender, chat, sent_at),
+        "INSERT INTO sightings (document_id, sender, chat, sent_at, account_id)"
+        " VALUES (%s, %s, %s, %s, %s)",
+        (document_id, sender, chat, sent_at, account_id),
     )

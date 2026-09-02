@@ -18,3 +18,7 @@ bridge/auth/
 context.md
 .DS_Store
 tests/.DS_Store
+
+# web build output and deps
+web/node_modules/
+web/dist/
