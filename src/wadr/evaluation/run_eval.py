@@ -54,12 +54,23 @@ def main() -> None:
             "Create it (one JSON object per line, format in evaluation/judgments.py) "
             "or pass a path: uv run python -m wadr.evaluation.run_eval <file>"
         )
-    rows = judgments.load(path)
+    all_rows = judgments.load(path)
+    # An ungraded query scores 0 for every model, which would silently drag the
+    # averages toward zero and read as "the models are bad". Only graded
+    # queries are evaluated; the header says how many that is.
+    rows = [r for r in all_rows if r["relevant"]]
+    if not rows:
+        raise SystemExit(
+            f"None of the {len(all_rows)} queries in {path} carry a relevance "
+            "judgment yet. Grade some first: start the API "
+            "(uv run uvicorn wadr.api.app:app) and open http://localhost:8000/judge"
+        )
     with get_conn() as conn:
         hash_by_id = dict(conn.execute("SELECT id, file_hash FROM documents").fetchall())
 
     columns = ["P@5", "R@5", "F1@5", "MRR", "nDCG@10"]
-    print(f"\n{len(rows)} queries over {len(hash_by_id)} documents\n")
+    print(f"\n{len(rows)} of {len(all_rows)} queries graded, "
+          f"over {len(hash_by_id)} documents\n")
     print("| model   | " + " | ".join(f"{c:>7}" for c in columns) + " |")
     print("|---------|" + "|".join("--------:" for _ in columns) + "|")
     for model in MODELS:

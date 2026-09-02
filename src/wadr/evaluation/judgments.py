@@ -78,3 +78,27 @@ def load(path: Path) -> list[dict]:
     if not rows:
         raise ValueError(f"{path}: no judgments found")
     return rows
+
+
+HEADER = (
+    "# WADR relevance judgments. One JSON object per line; format documented in\n"
+    "# src/wadr/evaluation/judgments.py. Grades: 3 = the document the user wanted,\n"
+    "# 2 = clearly on topic, 1 = marginally related. Omit grade-0 documents.\n"
+    "#\n"
+    "# Graded at http://localhost:8000/judge - edits here and there are equivalent.\n"
+)
+
+
+def dump(path: Path, rows: list[dict]) -> None:
+    """Write judgments back, preserving order. Inverse of load().
+
+    ponytail: rewrites the whole file on every save. It is a few KB and one
+    person grades at a time; add locking only if grading ever goes concurrent.
+    """
+    Path(path).write_text(
+        HEADER + "".join(
+            json.dumps({"qid": r["qid"], "query": r["query"], "relevant": r["relevant"]}) + "\n"
+            for r in rows
+        ),
+        encoding="utf-8",
+    )

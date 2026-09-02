@@ -153,7 +153,26 @@ uv run python -m wadr.evaluation.run_eval    # model x metric table for the repo
 Judgments live in `evaluation/queries.jsonl` (format in
 `src/wadr/evaluation/judgments.py`), keyed by `file_hash` so they survive a DB
 wipe and re-ingest. Metrics are hand-implemented in `evaluation/metrics.py` —
-no sklearn, no pytrec_eval.
+no sklearn, no pytrec_eval. `run_eval` averages only queries that carry at
+least one judgment, so partial grading is fine and an ungraded query never
+drags a model's score toward zero.
+
+### Grading judgments
+
+```sh
+uv run uvicorn wadr.api.app:app     # then open http://localhost:8000/judge
+```
+
+The dashboard **pools** the top results of all five models per query and shows
+the union for grading — grading only one model's output would bake that
+model's blind spots into the gold data and flatter it at evaluation time
+(this is how TREC builds judgments, and the report should say so). Grade with
+keys `0`–`3` (`0` = not relevant), `j`/`k` to move; each grade is written
+straight back to `queries.jsonl`, so the page and hand-editing that file are
+interchangeable. "Run benchmark" recomputes the table in place.
+
+The query texts shipped in `queries.jsonl` are **seeds with no grades** — every
+judgment has to be made by a person against real results.
 
 ## Configuration
 

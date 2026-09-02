@@ -5,9 +5,11 @@ from dataclasses import asdict
 from fastapi import FastAPI, HTTPException
 
 from wadr.adapters.openwa import OpenWAAdapter
+from wadr.api import judge
 from wadr.retrieval import service
 
 app = FastAPI(title="WADR")
+app.include_router(judge.router)  # /judge relevance-judging dashboard
 
 
 @app.get("/search")

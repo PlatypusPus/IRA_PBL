@@ -1,9 +1,15 @@
 # WADR — Team Assignment Sheet
 
-**All workstreams are implemented and `tests/test_todo_checklist.py` is fully
-green — 51 passed, 0 skipped.** No `NotImplementedError` stubs remain in `src/`.
-What is left is judgement work, not code: review the relevance grades in
-`evaluation/queries.jsonl` and extend it from 24 queries toward ~40.
+**All workstreams are implemented and the test suite is green — 57 passed, 0
+skipped.** No `NotImplementedError` stubs remain in `src/`.
+
+What is left is judgement work, not code. `evaluation/queries.jsonl` holds 24
+**ungraded** query seeds; the numbers that were there before were one person's
+guesses from reading the documents, so they were removed rather than quoted as
+evidence. Grade for real at `http://localhost:8000/judge` (pools all five
+models per query, writes back to the file), then run the benchmark. Extend
+toward ~40 queries, and include ambiguous and multi-answer ones — with only
+single-answer queries, dense and hybrid tie and the fusion cannot show value.
 
 The history below is kept as the record of who built what, for the report.
 
@@ -86,10 +92,11 @@ point** — and produce the benchmark table.
 
 **Tasks (dependency order):**
 - [~] ~40 queries in `queries.jsonl` over the shared test corpus; include phrase
-      queries and filter-style queries. **24 written** in `evaluation/queries.jsonl`,
-      graded by one person from the document text — review the grades and extend
-      to ~40. q19-q24 are filter-style; all five models honour filters now.
-- [x] Grade relevance 0–3 per (query, document), keyed by `file_hash` so judgments survive re-ingest
+      queries and filter-style queries. **24 seeds written** in
+      `evaluation/queries.jsonl`, all UNGRADED — extend toward ~40.
+      q19-q24 are filter-style; all five models honour filters now.
+- [ ] Grade relevance 0–3 per (query, document), keyed by `file_hash` so judgments survive re-ingest
+      — do it at `http://localhost:8000/judge`, which pools all five models per query
 - [x] `metrics.py`: P@k, R@k, F1@k, reciprocal rank, nDCG@k — pure Python, formula comments
 - [x] `judgments.py` loader with validation (unique qids, grades in 1..3)
 - [x] `run_eval.py`: every model × every query, macro-average, print the markdown table
