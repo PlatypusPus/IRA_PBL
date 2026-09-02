@@ -13,7 +13,7 @@ import pytest
 from wadr.adapters import openwa
 from wadr.evaluation import judgments, metrics, run_eval
 from wadr.indexing import inverted_index
-from wadr.ingestion.extractors import audio_asr, docx, image_ocr
+from wadr.ingestion.extractors import audio_asr, docx, image_ocr, pdf
 from wadr.retrieval import boolean_model, filters, fusion, tfidf_model
 
 WS2 = pytest.mark.skip(reason="TODO: workstream 2 (extractors)")
@@ -51,22 +51,80 @@ def test_openwa_send_results_posts_to_bridge(monkeypatch):
 
 # ---------------------------------------------------------------- WS2
 
-@WS2
 def test_docx_extracts_paragraph_text():
     # build a minimal .docx in-test (python-docx) and round-trip it
-    assert "hello" in docx.extract(b"...").lower()
+    import io
+
+    from docx import Document
+
+    d = Document()
+    d.add_paragraph("hello from a paragraph")
+    d.add_table(rows=1, cols=1).cell(0, 0).text = "table cell text"
+    buf = io.BytesIO()
+    d.save(buf)
+    out = docx.extract(buf.getvalue())
+    assert "hello" in out.lower()
+    assert "table cell" in out.lower()
 
 
-@WS2
 def test_image_ocr_reads_printed_text():
     # render "HELLO" onto a Pillow image, OCR it back
-    assert "hello" in image_ocr.extract(b"...").lower()
+    import io
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    img = Image.new("RGB", (340, 100), "white")
+    ImageDraw.Draw(img).text(
+        (16, 16), "HELLO", fill="black", font=ImageFont.load_default(size=48)
+    )
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    assert "hello" in image_ocr.extract(buf.getvalue()).lower()
 
 
-@WS2
+def _scanned_pdf_bytes(text: str) -> bytes:
+    # a one-page PDF whose only "content" is a raster image - no text layer
+    import io
+
+    import fitz  # PyMuPDF
+    from PIL import Image, ImageDraw, ImageFont
+
+    img = Image.new("RGB", (340, 100), "white")
+    ImageDraw.Draw(img).text(
+        (16, 16), text, fill="black", font=ImageFont.load_default(size=48)
+    )
+    png = io.BytesIO()
+    img.save(png, format="PNG")
+
+    doc = fitz.open()
+    doc.new_page(width=340, height=100)
+    doc[0].insert_image(doc[0].rect, stream=png.getvalue())
+    return doc.tobytes()
+
+
+def test_pdf_ocrs_scanned_pages():
+    out = pdf.extract(_scanned_pdf_bytes("HELLO"))
+    assert "hello" in out.lower()
+
+
+def test_pdf_keeps_text_layer_untouched():
+    import fitz  # PyMuPDF
+
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "plain text layer")
+    out = pdf.extract(doc.tobytes())
+    assert "plain text layer" in out
+    assert "HELLO" not in out.upper()
+
+
 def test_audio_asr_transcribes_voice_note():
-    # tiny fixture .ogg saying a known word
-    assert audio_asr.extract(b"...").strip() != ""
+    # real voice fixture (tests/fixtures/voice.ogg) saying a known phrase
+    from pathlib import Path
+
+    fixture = Path(__file__).parent / "fixtures" / "voice.ogg"
+    out = audio_asr.extract(fixture.read_bytes()).strip()
+    assert "hello" in out.lower()
 
 
 # ---------------------------------------------------------------- WS3

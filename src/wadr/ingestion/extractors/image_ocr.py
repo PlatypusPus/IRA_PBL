@@ -1,12 +1,16 @@
-"""OCR for images (and scanned PDF pages routed from pdf.py). TODO(WS2)."""
+"""OCR for images (and scanned PDF pages routed from pdf.py).
+
+Needs the tesseract binary on the system - pytesseract is just a wrapper,
+so `pip install pytesseract` alone is not enough. See the README for the
+system install step.
+"""
+
+import io
+
+import pytesseract
+from PIL import Image
 
 
 def extract(file_bytes: bytes) -> str:
-    """OCR printed text out of an image (png/jpg).
-
-    Intended implementation: pytesseract + Pillow (add both to pyproject).
-    Requires the tesseract binary installed on the machine - document the
-    install step in README when you wire this up. Return the raw recognized
-    text; downstream chunking/indexing needs nothing else.
-    """
-    raise NotImplementedError("TODO(WS2): image OCR extractor")
+    """OCR printed text out of an image (png/jpg) via pytesseract + Pillow."""
+    return pytesseract.image_to_string(Image.open(io.BytesIO(file_bytes)))
