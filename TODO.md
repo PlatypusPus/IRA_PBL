@@ -55,12 +55,12 @@ changes anywhere.
 `audio_asr.py`, plus the scanned-page fallback in `pdf.py`.
 
 **Tasks (dependency order):**
-- [ ] `docx.py` with python-docx (add the dependency): paragraphs + table cells
-- [ ] `image_ocr.py` with pytesseract + Pillow; document the tesseract system install in README
-- [ ] `pdf.py` fallback: pages with an empty text layer are scans — render to image, route through `image_ocr`
-- [ ] `audio_asr.py` with Whisper (model "base") for `.ogg`/`.opus` voice notes; needs ffmpeg
-- [ ] Add one sample file per new type to `sample_docs/` so the demo covers them
-- [ ] Unskip the WS2 tests
+- [x] `docx.py` with python-docx (add the dependency): paragraphs + table cells
+- [x] `image_ocr.py` with pytesseract + Pillow; document the tesseract system install in README
+- [x] `pdf.py` fallback: pages with an empty text layer are scans — render to image, route through `image_ocr`
+- [x] `audio_asr.py` with Whisper (model "base") for `.ogg`/`.opus` voice notes; needs ffmpeg
+- [x] Add one sample file per new type to `sample_docs/` so the demo covers them
+- [x] Unskip the WS2 tests
 
 **Definition of done:** `uv run wadr ingest ./sample_docs` extracts text from
 a docx, a photographed page, and a voice note; searching a word that exists
