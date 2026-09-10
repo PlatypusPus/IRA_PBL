@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 import wadr.api.app as appmod
 from wadr import accounts
 from wadr.db import get_conn
+from wadr.indexing import embedder
 
 BRIDGE = {"X-Bridge-Token": "test-token"}
 
@@ -77,6 +78,10 @@ def test_download_and_similar_are_scoped(world):
 def test_a_miss_is_reported_as_a_guess_not_a_match(world):
     """Dense retrieval always returns its nearest k; the reply must not call
     that a match."""
+    if embedder.embed(["ping"]) is None:
+        # Without an embedder there are no nearest neighbours to mislabel, and
+        # "Nothing matched" is the correct answer - a different test's subject.
+        pytest.skip("needs Ollama: this is about dense retrieval's guesses")
     _, bob = world["clients"]
     reply = bob.post("/api/chat", json={"text": "merger dossier"}).json()
     assert "closest" in reply["text"].lower()

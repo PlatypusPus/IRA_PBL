@@ -91,6 +91,15 @@ is usually faster there.
 For UI work, `cd web && npm run dev` gives hot reload on :5173 and proxies
 `/api` to :8000.
 
+Passwords are stored as salted scrypt hashes, so a forgotten one cannot be
+looked up - only replaced. Nothing sends email, so that is done from the
+terminal by whoever runs the database:
+
+```sh
+uv run wadr passwd                     # list the accounts that exist
+uv run wadr passwd you@example.com     # set a new password
+```
+
 ## Using it
 
 In the web app, ask for what you want. Filters narrow the search:
@@ -173,6 +182,42 @@ where the last one stopped rather than at "seven days ago", so a run that is
 skipped - or a bridge that was offline for it - widens the next digest instead
 of losing the week it missed.
 
+Each file comes with a one-line summary, because `wa-1788370118.jpeg` tells you
+nothing about the exam notice inside it. Point it at any local chat model and
+it writes them:
+
+```sh
+ollama pull llama3.2:3b
+export WADR_SUMMARY_MODEL=llama3.2:3b   # or add it to .env
+```
+
+See what it writes before anyone else does:
+
+```sh
+uv run wadr summarize                   # summarise what has none yet
+uv run wadr summarize --redo --limit 5  # rewrite five, to compare models
+uv run wadr summarize --id 342          # one specific document
+uv run wadr digest --dry-run --days 400 # the whole message, sent nowhere
+```
+
+It prints the model it used, so "why are the summaries bad" answers itself
+when the answer is "no model is configured".
+
+The same summary appears on each search result in the web app, which is what
+makes a result readable when WhatsApp named the file `1787227836920-lnml9ufa.pdf`
+and the page OCR'd into rubble. A snippet that is not prose is dropped rather
+than shown - the summary is the only useful thing left to say about it. New
+documents get their summary from the next digest, or run `wadr summarize` on a
+schedule next to it.
+
+Without a model it falls back to the document's own opening sentence, which is
+right for anything that leads with its subject and merely adequate for a
+scanned letterhead. Garbled OCR is left unsummarised rather than quoted back:
+measured on this corpus, rubble scores 2.25 mean word length while every real
+opening scores above 4.3, so anything under 3.5 is dropped. Summaries are
+written once, on first use, and never during ingest - a model call on the
+webhook path would hold WhatsApp's delivery open for seconds per file.
+
 ## Tests & lint
 
 ```sh
@@ -188,6 +233,7 @@ cd web && npm run build
 | `WADR_DATABASE_URL` | `postgresql://wadr:wadr@localhost:5433/wadr` |
 | `WADR_OLLAMA_URL` | `http://127.0.0.1:11434` |
 | `WADR_EMBED_MODEL` | `nomic-embed-text` |
+| `WADR_SUMMARY_MODEL` | *(unset - digests fall back to opening sentences)* |
 | `WADR_BRIDGE_URL` | `http://127.0.0.1:8085` |
 | `WADR_BRIDGE_TOKEN` | *(required — same value in both processes)* |
 | `WADR_API_KEY` | *(MCP server only — the agent's key)* |

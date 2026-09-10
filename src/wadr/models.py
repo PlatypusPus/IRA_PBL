@@ -14,6 +14,10 @@ class SearchResult:
     sender: str | None = None       # who shared it (from the newest sighting)
     sent_at: datetime | None = None  # when it was last shared
     mime_type: str | None = None    # so a UI knows whether it can preview it
+    # One line saying what the document is, for when the filename is
+    # "1787227836920-lnml9ufa.pdf" and the snippet is OCR rubble. Empty until
+    # `wadr summarize` or a digest has written one.
+    summary: str | None = None
     # True when nothing lexical matched and the embedding was only vaguely
     # close - a guess worth showing, not a hit worth asserting.
     weak: bool = False

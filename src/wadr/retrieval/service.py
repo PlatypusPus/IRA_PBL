@@ -19,6 +19,7 @@ from wadr.accounts import account_ids
 from wadr.db import get_conn
 from wadr.models import SearchResult
 from wadr.retrieval import bm25_model, dense_model, filters, fusion
+from wadr.summarize import looks_like_prose
 
 log = logging.getLogger(__name__)
 
@@ -265,9 +266,10 @@ def _enrich(
     # business, not the searcher's.
     seen_sql, seen_params = filters.seen_by_sql(f.seen_by)
     sightings = {
-        row[0]: (row[1], row[2], row[3])
+        row[0]: (row[1], row[2], row[3], row[4])
         for row in conn.execute(
-            "SELECT DISTINCT ON (s.document_id) s.document_id, s.sender, s.sent_at, d.mime_type"
+            "SELECT DISTINCT ON (s.document_id) s.document_id, s.sender, s.sent_at,"
+            "       d.mime_type, d.summary"
             "  FROM sightings s JOIN documents d ON d.id = s.document_id"
             f" WHERE s.document_id = ANY(%s) AND s.account_id = ANY(%s){seen_sql}"
             " ORDER BY s.document_id, s.sent_at DESC",
@@ -276,4 +278,11 @@ def _enrich(
     }
     for r in results:
         r.snippet = snippets.get(r.chunk_id, r.snippet).strip()
-        r.sender, r.sent_at, r.mime_type = sightings.get(r.document_id, (None, None, None))
+        # A photographed page that OCR could not read produces a snippet of
+        # rubble. Showing nothing is better than showing that; the summary,
+        # when there is one, says what the document is instead.
+        if not looks_like_prose(r.snippet.replace("*", "")):
+            r.snippet = ""
+        r.sender, r.sent_at, r.mime_type, r.summary = sightings.get(
+            r.document_id, (None, None, None, None)
+        )

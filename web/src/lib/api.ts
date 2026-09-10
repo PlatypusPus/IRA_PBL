@@ -13,6 +13,9 @@ export type Hit = {
   sender: string | null
   sent_at: string | null
   mime_type: string | null
+  // one line saying what the document is - the filename is often meaningless
+  // ("1787227836920-lnml9ufa.pdf") and the snippet is sometimes OCR rubble
+  summary: string | null
   // nothing lexical matched and the embedding was only loosely close: shown as
   // a guess, not asserted as a hit
   weak: boolean

@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import wadr.api.app as appmod
-from wadr import accounts, digest
+from wadr import accounts, digest, summarize
 from wadr.db import get_conn
 
 
@@ -49,6 +49,15 @@ def test_digest_lists_what_arrived(user):
     assert user["filename"] in text
     assert "Priya" in text
     assert "*1 new document*" in text  # singular, not "1 new documents"
+
+
+def test_each_file_carries_a_summary_of_what_it_is(user, monkeypatch):
+    """A filename like wa-1788370118.jpeg says nothing on its own."""
+    # No model: what a real one writes is its business, and this is about the
+    # digest carrying the line at all.
+    monkeypatch.setattr(summarize, "MODEL", "")
+    text = digest.build(user["id"])
+    assert "_lease renewal" in text.lower()
 
 
 def test_a_user_with_nothing_new_gets_no_message():
@@ -98,7 +107,9 @@ def test_a_document_timestamped_in_the_future_is_not_repeated(user, monkeypatch)
 
 
 def test_long_digests_are_truncated_with_a_count():
-    arrivals = [(f"file-{i}.pdf", "Dad", datetime.now(UTC)) for i in range(digest.MAX_LISTED + 4)]
+    arrivals = [
+        (f"file-{i}.pdf", "Dad", datetime.now(UTC), "") for i in range(digest.MAX_LISTED + 4)
+    ]
     text = digest.compose(arrivals)
     assert f"*{len(arrivals)} new documents*" in text
     assert "…and 4 more" in text

@@ -17,6 +17,7 @@ import psycopg
 
 from wadr.api import bridge_client
 from wadr.db import get_conn
+from wadr.summarize import for_document
 
 log = logging.getLogger(__name__)
 
@@ -38,14 +39,17 @@ def _since(conn: psycopg.Connection, user_id: int, days: int) -> datetime:
 
 def _arrivals(
     conn: psycopg.Connection, user_id: int, since: datetime
-) -> list[tuple[str, str, datetime]]:
-    """(filename, sender, received) for everything this user's numbers got since.
+) -> list[tuple[str, str, datetime, str]]:
+    """(filename, sender, received, summary) for what this user's numbers got.
+
+    The summary is written on first use, here rather than during ingest: a
+    model call on the webhook path would hold WhatsApp's delivery open.
 
     ponytail: no LIMIT - a week of one person's documents is small, and the
     count in the message has to be the real one.
     """
-    return conn.execute(
-        "SELECT d.filename, min(s.sender), max(s.sent_at)"
+    rows = conn.execute(
+        "SELECT d.id, d.filename, min(s.sender), max(s.sent_at)"
         "  FROM documents d"
         "  JOIN sightings s ON s.document_id = d.id"
         "  JOIN whatsapp_accounts w ON w.id = s.account_id"
@@ -54,10 +58,15 @@ def _arrivals(
         " ORDER BY max(s.sent_at) DESC",
         (user_id, since),
     ).fetchall()
+    return [(r[1], r[2], r[3], for_document(conn, r[0])) for r in rows]
 
 
-def compose(arrivals: list[tuple[str, str, datetime]]) -> str:
-    lines = [f"• {name} — from {sender}" for name, sender, _ in arrivals[:MAX_LISTED]]
+def compose(arrivals: list[tuple[str, str, datetime, str]]) -> str:
+    lines = []
+    for name, sender, _, summary in arrivals[:MAX_LISTED]:
+        lines.append(f"• {name} — from {sender}")
+        if summary:
+            lines.append(f"  _{summary}_")  # WhatsApp italics
     if len(arrivals) > MAX_LISTED:
         lines.append(f"…and {len(arrivals) - MAX_LISTED} more")
     plural = "" if len(arrivals) == 1 else "s"

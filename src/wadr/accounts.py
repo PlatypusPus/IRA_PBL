@@ -67,6 +67,35 @@ def sign_up(email: str, password: str) -> int:
         ).fetchone()[0]
 
 
+def set_password(email: str, password: str) -> int:
+    """Replace an account's password. Returns the user id.
+
+    There is no reset-by-email flow (no mail is sent anywhere), so this - run
+    by whoever operates the database - is the only way back into a locked-out
+    account. Stored passwords are one-way hashes; the old one is not
+    recoverable, only replaceable.
+    """
+    email = email.strip().lower()
+    if len(password) < MIN_PASSWORD:
+        raise AuthError(f"password must be at least {MIN_PASSWORD} characters")
+    with get_conn() as conn:
+        row = conn.execute(
+            "UPDATE users SET password_hash = %s WHERE email = %s RETURNING id",
+            (hash_password(password), email),
+        ).fetchone()
+        if row is None:
+            raise AuthError(f"no account for {email}")
+        # Everything signed in with the old password stops being signed in.
+        conn.execute("DELETE FROM sessions WHERE user_id = %s", (row[0],))
+    return row[0]
+
+
+def emails() -> list[str]:
+    """Every registered address - for an operator who forgot which they used."""
+    with get_conn() as conn:
+        return [r[0] for r in conn.execute("SELECT email FROM users ORDER BY id").fetchall()]
+
+
 def log_in(email: str, password: str) -> str:
     """Verify credentials and return a fresh session token."""
     with get_conn() as conn:

@@ -189,11 +189,18 @@ function ResultCard({ hit }: { hit: Hit }) {
           {hit.sender && (
             <p className="mt-0.5 text-xs text-muted-foreground">from {hit.sender}</p>
           )}
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {parts.map((part, i) =>
-              i % 2 ? <mark key={i} className="bg-transparent font-medium text-foreground">{part}</mark> : part,
-            )}
-          </p>
+          {hit.summary && (
+            <p className="mt-2 text-sm leading-relaxed text-foreground">{hit.summary}</p>
+          )}
+          {/* The matched words in context. Blank when the page OCR'd into
+              rubble, in which case the summary above is all there is. */}
+          {hit.snippet && (
+            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+              {parts.map((part, i) =>
+                i % 2 ? <mark key={i} className="bg-transparent font-medium text-foreground">{part}</mark> : part,
+              )}
+            </p>
+          )}
         </div>
         <a
           href={api.fileUrl(hit.document_id)}

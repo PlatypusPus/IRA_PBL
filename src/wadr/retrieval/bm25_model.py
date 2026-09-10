@@ -53,13 +53,25 @@ def search(
     ).fetchall()
     if not rows:
         return []
-    bm25 = BM25Okapi([_tokenize(r[2]) for r in rows])
-    scores = bm25.get_scores(_tokenize(query))
-    ranked = sorted(zip(rows, scores, strict=True), key=lambda pair: -pair[1])[:top_k]
+    corpus = [_tokenize(r[2]) for r in rows]
+    terms = _tokenize(query)
+    scores = BM25Okapi(corpus).get_scores(terms)
+
+    # Whether a chunk matches is decided by the words in it, NOT by the sign of
+    # its BM25 score. On a small corpus - one user with a handful of documents -
+    # a term present in every document gets a NEGATIVE idf, so "payslip" across
+    # three payslips scores -0.359 for all three and a `score > 0` filter throws
+    # away every correct answer. BM25 is only asked to order the matches.
+    wanted = set(terms)
+    hits = [
+        (row, score)
+        for row, score, tokens in zip(rows, scores, corpus, strict=True)
+        if wanted & set(tokens)
+    ]
+    hits.sort(key=lambda pair: -pair[1])
     return [
         SearchResult(
             chunk_id=r[0], document_id=r[1], filename=r[3], snippet=r[2][:200], score=float(s)
         )
-        for r, s in ranked
-        if s > 0
+        for r, s in hits[:top_k]
     ]

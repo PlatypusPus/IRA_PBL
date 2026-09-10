@@ -14,7 +14,14 @@ const ENV_FILE = path.join(ROOT, '.env');
 const WINDOWS = process.platform === 'win32';
 
 if (!fs.existsSync(ENV_FILE) || !/^WADR_BRIDGE_TOKEN=.+/m.test(fs.readFileSync(ENV_FILE, 'utf8'))) {
-  fs.appendFileSync(ENV_FILE, `WADR_BRIDGE_TOKEN=${crypto.randomBytes(16).toString('hex')}\n`);
+  // Lead with a newline unless the file already ends in one: a hand-edited .env
+  // often has no trailing newline, and appending blind would glue the token
+  // onto the end of whatever variable is last.
+  const existing = fs.existsSync(ENV_FILE) ? fs.readFileSync(ENV_FILE, 'utf8') : '';
+  const lead = existing && !existing.endsWith('\n') ? '\n' : '';
+  fs.appendFileSync(
+    ENV_FILE, `${lead}WADR_BRIDGE_TOKEN=${crypto.randomBytes(16).toString('hex')}\n`,
+  );
   console.log('Generated a bridge token in .env');
 }
 
