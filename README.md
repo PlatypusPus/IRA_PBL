@@ -1,177 +1,73 @@
-# WADR — WhatsApp Document Retrieval
+# WADR
 
-WADR is a personal search engine for the documents that fly past you on
-WhatsApp — PDFs, images, voice notes shared in chats. A thin adapter layer
-captures files from a channel (terminal today; WhatsApp via Baileys in WS1),
-the engine extracts text, dedupes by content hash, chunks and indexes it into
-Postgres (tsvector + pgvector embeddings), and answers queries with a hybrid
-of BM25 and dense retrieval fused by Reciprocal Rank Fusion — with
-from-scratch Boolean and TF-IDF models alongside as IR course lab evidence.
+**WhatsApp Document Retrieval.** A personal search engine for the documents
+that fly past you in chats: PDFs, Office files, photographed pages and voice
+notes.
+
+Files arrive through an adapter (a folder, or WhatsApp via the bridge). The
+engine extracts text, dedupes by content hash, chunks and indexes it into
+Postgres, and answers queries with a hybrid of BM25 and dense retrieval fused
+by Reciprocal Rank Fusion. Boolean and TF-IDF models are implemented from
+scratch alongside, as IR course lab evidence.
+
 New teammate? Read this page, then open [TODO.md](TODO.md) and find your
 workstream.
 
-## Architecture
+## Features
 
-```
- WhatsApp chats            ./sample_docs (or any folder)
-      |                          |
-      v                          v
-+------------------+    +----------------+
-| WhatsApp bridge  |    |                |
-| (Baileys, Node)  |    |   CLIAdapter   |          adapters/ -- THIN,
-+--------+---------+    |   (working)    |          no IR logic inside
-         | webhook      +-------+--------+
-         v                      |
-+------------------+            |
-|  OpenWAAdapter   |            |
-|  (working)       |            |
-+--------+---------+            |
-         |    on_document()     |
-         v                      v
-+---------------------------------------------------+
-| ingestion/   router -> extractor -> dedupe(SHA256) |
-|              -> chunker                            |
-|              txt/md/pdf/docx/image-OCR/voice-ASR   |
-+-------------------------+-------------------------+
-                          v
-+---------------------------------------------------+
-| indexing/    embedder (Ollama, optional)           |     PostgreSQL 16
-|              lexical (tsvector)              ----> |     + pgvector
-|              inverted_index (from scratch)         |
-+-------------------------+-------------------------+
-                          v
-+---------------------------------------------------+
-| retrieval/   bm25 | dense | tfidf | boolean        |
-|                   \     /                          |
-|                RRF fusion (k=60)                   |
-|              filters, recency boost                |
-+-------------------------+-------------------------+
-                          v
-              results -> adapter.send_results()
-
-| evaluation/  P@k Recall F1 MRR nDCG -- by hand      |
-```
-
-Two hard rules, enforced in review (details in
-[CONTRIBUTING.md](CONTRIBUTING.md)):
-
-1. **The engine never imports adapters.**
-2. **Classical IR modules stay library-free.**
+| Feature | What it does | How to use it |
+|---|---|---|
+| **Multi format ingest** | Extracts text from txt, md, pdf and docx, OCRs images with Tesseract, and transcribes voice notes with Whisper. | `uv run wadr ingest ./sample_docs` |
+| **Content hash dedupe** | Identical bytes are stored once. Re-sharing a known file records another sighting instead of a second document. | Automatic on every ingest. |
+| **Hybrid search** | BM25 and dense vectors ranked separately, then fused by RRF (k=60), with a recency boost. Catches both exact wording and paraphrases. | `uv run wadr search "tf-idf weighting"` |
+| **Five retrieval models** | `hybrid`, `bm25`, `dense`, `tfidf`, `boolean`. The last two are the from scratch lab implementations with no retrieval libraries. | `uv run wadr search "biryani" --model bm25` |
+| **Query filters** | Narrow by sender, chat, file type or date. Unknown prefixes stay in the query text. | `invoice from:dad in:family type:pdf after:2026-01-01` |
+| **From scratch inverted index** | A hand built postings index next to the Postgres tsvector path, so the classical machinery is ours, not a library's. | `src/wadr/indexing/inverted_index.py` |
+| **HTTP API** | Search, similar documents and feedback over JSON, which is what the bridge and any UI talk to. | `uv run uvicorn wadr.api.app:app` then `GET /search?q=exam+schedule` |
+| **WhatsApp bridge** | Ingest by sending a file to a linked number, search with `/find`, fetch a result with `/get`. | See [docs/whatsapp-bridge.md](docs/whatsapp-bridge.md) |
+| **Evaluation harness** | P@k, Recall, F1, MRR and nDCG computed by hand over judged queries, printed as a model by metric table for the report. | `uv run python -m wadr.evaluation.run_eval` |
 
 ## Setup
 
 Prereqs: [Docker](https://docs.docker.com/get-docker/),
 [uv](https://docs.astral.sh/uv/), and optionally [Ollama](https://ollama.com)
-for dense/hybrid search (`ollama pull nomic-embed-text`). Without Ollama
-everything still runs — search degrades to BM25-only with a warning.
-
-Image OCR needs the Tesseract executable on the system — `pytesseract` only
-wraps it, so pip-installing the Python package alone is not enough:
-
-```sh
-brew install tesseract          # macOS; Linux: apt install tesseract-ocr
-winget install UB-Mannheim.TesseractOCR   # Windows
-```
-
-On Windows the installer does not add Tesseract to `PATH`. Either add
-`C:\Program Files\Tesseract-OCR` to it, or set `pytesseract.pytesseract.tesseract_cmd`
-to the full `tesseract.exe` path — otherwise `pytesseract` raises
-`TesseractNotFoundError` and every image is skipped.
-
-Voice-note transcription needs `ffmpeg`, plus a one-time download of the
-Whisper `base` model (~150 MB, cached under `~/.cache/huggingface`):
-
-```sh
-brew install ffmpeg             # macOS; Linux: apt install ffmpeg
-```
+for dense and hybrid search (`ollama pull nomic-embed-text`). Without Ollama
+everything still runs, with search degrading to BM25 only and a warning.
 
 ```sh
 docker compose up -d      # Postgres 16 + pgvector
 uv sync
-uv run wadr migrate       # apply schema migrations (migrations/*.sql)
+uv run wadr migrate       # apply migrations/*.sql
 ```
+
+Image OCR and voice notes need Tesseract and ffmpeg installed separately. Full
+notes, including the Windows `PATH` trap, are in [docs/setup.md](docs/setup.md).
 
 ## Use
 
 ```sh
 uv run wadr ingest ./sample_docs
-uv run wadr search "tf-idf weighting" --model hybrid
-uv run wadr search "biryani" --model bm25
-uv run uvicorn wadr.api.app:app     # then GET http://localhost:8000/search?q=exam+schedule
+uv run wadr search "tf-idf weighting"              # hybrid by default
+uv run wadr search "biryani" --model bm25 --top-k 10
+uv run uvicorn wadr.api.app:app                    # GET /search?q=exam+schedule
 ```
 
-Models: `hybrid` (default) | `bm25` | `dense` | `tfidf` | `boolean`.
-`tfidf` and `boolean` are the from-scratch course-lab implementations —
-no retrieval libraries, see their module docstrings.
+## Docs
 
-## WhatsApp bridge
+| Document | Contents |
+|---|---|
+| [docs/setup.md](docs/setup.md) | Install, OCR and audio prerequisites, database |
+| [docs/architecture.md](docs/architecture.md) | Layout, data flow, the two hard rules |
+| [docs/retrieval.md](docs/retrieval.md) | The five models, filters, fusion, recency |
+| [docs/whatsapp-bridge.md](docs/whatsapp-bridge.md) | Running the bridge, commands, why Baileys |
+| [docs/evaluation.md](docs/evaluation.md) | Benchmark, judgments, metrics |
+| [docs/configuration.md](docs/configuration.md) | Environment variables |
+| [docs/schema.md](docs/schema.md) | Migrations and resets |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Branches, pull requests, hard rules |
 
-Needs [Node 18+](https://nodejs.org). The bridge owns the WhatsApp session and
-forwards documents / `/find` queries to the API (contract in
-`src/wadr/adapters/openwa.py`). Internally it uses
-[Baileys](https://github.com/WhiskeySockets/Baileys) — no browser. Both open-wa
-and whatsapp-web.js were tried and both broke on media download against current
-WhatsApp Web (they drive a real browser page and call WhatsApp internals that
-keep changing); Baileys speaks the protocol directly and decrypts media itself.
-Route and adapter names keep `openwa` from the original assignment; the bridge
-library sits behind an unchanged HTTP contract.
-
-```sh
-uv run uvicorn wadr.api.app:app        # terminal 1: the WADR API
-cd bridge && npm install && npm start  # terminal 2: the bridge
-```
-
-The bridge reads an optional `.env` at the repo root (Node's native
-`--env-file-if-exists`, no dotenv dependency) — e.g. `WADR_API=http://localhost:8017`
-if port 8000 is busy on your machine (then run uvicorn with `--port 8017`).
-
-Then open <http://localhost:8085> and scan the QR with WhatsApp
-(**Linked devices → Link a device**). Once connected:
-
-- **Send any PDF/document** to ingest it — the bridge reacts ✅ (saved), 📎
-  (already had it), or ❌ (failed), so the sender isn't left guessing.
-- **`/find <query>`** searches and replies with a ranked list.
-- **`/get <n>`** sends back the nth file from your last `/find`.
-
-Re-forwarding a known file records a sighting, not a new document. Files
-ingested before the `content` column (migration 0002) can't be `/get`-ed until
-re-shared.
-
-## Tests & lint
+## Tests and lint
 
 ```sh
 uv run pytest          # skipped tests are the team checklist (test_todo_checklist.py)
 uv run ruff check .
 ```
-
-## Benchmark
-
-```sh
-uv run python -m wadr.evaluation.run_eval    # model x metric table for the report
-```
-
-Judgments live in `evaluation/queries.jsonl` (format in
-`src/wadr/evaluation/judgments.py`), keyed by `file_hash` so they survive a DB
-wipe and re-ingest. Metrics are hand-implemented in `evaluation/metrics.py` —
-no sklearn, no pytrec_eval.
-
-## Configuration
-
-| Env var                  | Default                                      |
-|--------------------------|----------------------------------------------|
-| `WADR_DATABASE_URL`      | `postgresql://wadr:wadr@localhost:5433/wadr` |
-| `WADR_OLLAMA_URL`        | `http://127.0.0.1:11434`                     |
-| `WADR_OPENWA_BRIDGE_URL` | `http://127.0.0.1:8085` (WS1)                |
-
-The two HTTP defaults are `127.0.0.1`, not `localhost`, on purpose: `localhost`
-resolves to `::1` first, both services bind IPv4, and Python's urllib has no
-Happy Eyeballs fallback — it stalls ~2s per call before retrying IPv4. Keep the
-literal IP if you override them on a single machine.
-
-## Schema changes
-
-The schema lives in `migrations/` as numbered plain-SQL files, tracked in the
-`schema_migrations` table. To change the schema: add
-`migrations/000N_<what-it-does>.sql` (never edit a file that has already been
-applied), then `uv run wadr migrate`. Full reset (drops data):
-`docker compose down -v && docker compose up -d && uv run wadr migrate`.
