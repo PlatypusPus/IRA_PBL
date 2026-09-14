@@ -34,6 +34,6 @@ def extract(file_bytes: bytes) -> str:
                 ocr = image_ocr.extract(pix.tobytes("png"))
                 pages.append(max(ocr, text, key=len))  # thin layer may still beat bad OCR
             except Exception as e:  # noqa: BLE001 - a bad page must not kill the whole PDF
-                log.warning("page %d OCR failed: %s - kept empty", page.number + 1, e)
-                pages.append("")
+                log.warning("page %d OCR failed: %s - kept text layer", page.number + 1, e)
+                pages.append(text)
         return "\n".join(pages)
