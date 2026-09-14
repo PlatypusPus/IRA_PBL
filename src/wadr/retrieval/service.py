@@ -16,6 +16,8 @@ CANDIDATES = 30  # chunk-level pool retrieved before collapsing to one hit per d
 
 def search(query: str, model: str = "hybrid", top_k: int = 5) -> list[SearchResult]:
     query, f = filters.parse(query)  # strips from:/in:/before:/after:/type:
+    if not query.strip():
+        return []
     with get_conn() as conn:
         if model == "boolean":
             return boolean_model.search(conn, query, top_k, f)

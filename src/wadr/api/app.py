@@ -2,6 +2,7 @@
 
 from dataclasses import asdict
 
+import psycopg
 from fastapi import FastAPI, HTTPException
 
 from wadr.adapters.openwa import OpenWAAdapter
@@ -19,6 +20,8 @@ def search(q: str, model: str = "hybrid", top_k: int = 5):
         raise HTTPException(400, str(e)) from e
     except NotImplementedError as e:
         raise HTTPException(501, str(e)) from e
+    except psycopg.OperationalError as e:
+        raise HTTPException(503, f"database unavailable: {e}") from e
 
 
 @app.post("/webhook/openwa")
@@ -28,6 +31,8 @@ def openwa_webhook(payload: dict):
         return OpenWAAdapter().handle_webhook(payload)
     except (KeyError, ValueError) as e:  # missing field, bad base64, bad timestamp
         raise HTTPException(400, f"bad payload: {e!r}") from e
+    except psycopg.OperationalError as e:
+        raise HTTPException(503, f"database unavailable: {e}") from e
 
 
 @app.post("/webhook/openwa/query")
@@ -55,6 +60,8 @@ def similar(document_id: int, top_k: int = 5):
         return [asdict(r) for r in service.similar(document_id, top_k=top_k)]
     except LookupError as e:
         raise HTTPException(404, str(e)) from e
+    except psycopg.OperationalError as e:
+        raise HTTPException(503, f"database unavailable: {e}") from e
 
 
 @app.post("/feedback")
@@ -72,3 +79,5 @@ def feedback(payload: dict):
         )}
     except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e)) from e
+    except psycopg.OperationalError as e:
+        raise HTTPException(503, f"database unavailable: {e}") from e

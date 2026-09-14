@@ -28,6 +28,7 @@ Env: WADR_OPENWA_BRIDGE_URL, default http://127.0.0.1:8085.
 
 import base64
 import json
+import logging
 import os
 import urllib.request
 from datetime import datetime
@@ -37,6 +38,8 @@ from wadr.db import get_conn
 from wadr.ingestion import dedupe
 from wadr.models import SearchResult
 from wadr.retrieval import service
+
+log = logging.getLogger(__name__)
 
 # chat_id -> document_ids of that chat's last /find, so "/get <n>" can resolve n.
 # ponytail: in-memory, unbounded, resets on restart - fine at personal scale;
@@ -53,14 +56,18 @@ def _post(route: str, body: dict) -> None:
         data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"},
     )
-    urllib.request.urlopen(req, timeout=30)
+    try:
+        urllib.request.urlopen(req, timeout=30)
+    except Exception as e:  # noqa: BLE001 - bridge down must not crash ingest/search
+        log.warning("bridge POST %s failed: %s", route, e)
 
 
 class OpenWAAdapter(MessagingInterface):
     def handle_webhook(self, payload: dict) -> dict:
         """Validate + decode an inbound bridge payload, delegate to on_document()."""
         file_bytes = base64.b64decode(payload["data_base64"], validate=True)
-        sent_at = datetime.fromisoformat(payload["timestamp"])
+        ts = payload["timestamp"].replace("Z", "+00:00")
+        sent_at = datetime.fromisoformat(ts)
         # ponytail: pre-check the hash here because router.ingest() returns the
         # same id for new and duplicate docs; cheaper than changing its contract.
         with get_conn() as conn:
