@@ -2,8 +2,8 @@
 
 **All workstreams are implemented and `tests/test_todo_checklist.py` is fully
 green — 51 passed, 0 skipped.** No `NotImplementedError` stubs remain in `src/`.
-What is left is judgement work, not code: review the relevance grades in
-`evaluation/queries.jsonl` and extend it from 24 queries toward ~40.
+`evaluation/queries.jsonl` is now 40 queries over 12 documents (all extractor
+types, phrase and filter-style queries).
 
 The history below is kept as the record of who built what, for the report.
 
@@ -85,10 +85,11 @@ point** — and produce the benchmark table.
 `judgments.py`).
 
 **Tasks (dependency order):**
-- [~] ~40 queries in `queries.jsonl` over the shared test corpus; include phrase
-      queries and filter-style queries. **24 written** in `evaluation/queries.jsonl`,
-      graded by one person from the document text — review the grades and extend
-      to ~40. q19-q24 are filter-style; all five models honour filters now.
+- [x] ~40 queries in `queries.jsonl` over the shared test corpus; include phrase
+      queries and filter-style queries. **40 written** in `evaluation/queries.jsonl`
+      over 12 documents (every extractor type: txt, pdf, docx, png, ogg), graded
+      from document text. q19-q24, q32-q36, q40 are filter-style; all five models
+      honour filters now.
 - [x] Grade relevance 0–3 per (query, document), keyed by `file_hash` so judgments survive re-ingest
 - [x] `metrics.py`: P@k, R@k, F1@k, reciprocal rank, nDCG@k — pure Python, formula comments
 - [x] `judgments.py` loader with validation (unique qids, grades in 1..3)

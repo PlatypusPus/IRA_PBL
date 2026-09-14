@@ -11,6 +11,19 @@ from wadr.retrieval import service
 app = FastAPI(title="WADR")
 
 
+@app.get("/health")
+def health():
+    """Liveness probe for Docker/bridge - also checks DB connectivity."""
+    try:
+        from wadr.db import get_conn
+
+        with get_conn() as conn:
+            conn.execute("SELECT 1")
+        return {"status": "ok", "db": "up"}
+    except Exception as e:  # noqa: BLE001
+        return {"status": "degraded", "db": str(e)}
+
+
 @app.get("/search")
 def search(q: str, model: str = "hybrid", top_k: int = 5):
     """Same engine call the CLI makes - proof the engine is adapter-agnostic."""
