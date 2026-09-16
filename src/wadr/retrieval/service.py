@@ -52,6 +52,8 @@ def search(
     if not query.strip():
         return []
     query, f = filters.parse(query)  # strips from:/in:/before:/after:/type:
+    if not query.strip():
+        return []
     with get_conn() as conn:
         f = replace(f, account_ids=account_ids(conn, user_id), seen_by=seen_by)
         if not f.account_ids:

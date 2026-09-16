@@ -1,0 +1,8 @@
+Facility Carbon Emissions and Electricity Records - Q1 2026
+Sustainability Cell, St. Joseph College
+
+Summary of carbon emissions for the campus facility during January-March 2026. Total electricity consumption: 42,580 kWh. Average monthly consumption 14,193 kWh. Peak load recorded on 18 February (612 kWh in a single day).
+
+Carbon emissions calculated at 0.82 kg CO2 per kWh (grid emission factor). Total CO2 equivalent: 34,915 kg (34.9 tonnes). Compared to Q4 2025, electricity usage is down 8 percent due to solar panel installation on the library rooftop.
+
+Recommendations: Replace remaining fluorescent fixtures with LED, schedule HVAC optimization, and publish monthly kWh records for transparency. Next review in July 2026.
