@@ -11,6 +11,11 @@ services:
     volumes:
       - wadr_pgdata:/var/lib/postgresql/data
       # schema lives in migrations/ - apply with: uv run wadr migrate
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wadr -d wadr"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   wadr_pgdata:

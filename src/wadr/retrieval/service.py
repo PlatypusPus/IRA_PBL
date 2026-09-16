@@ -49,6 +49,8 @@ def search(
     see - set it when the search was typed by a group member rather than by the
     account owner. None is the owner, who sees all of their own documents.
     """
+    if not query.strip():
+        return []
     query, f = filters.parse(query)  # strips from:/in:/before:/after:/type:
     with get_conn() as conn:
         f = replace(f, account_ids=account_ids(conn, user_id), seen_by=seen_by)
@@ -103,8 +105,11 @@ def similar(document_id: int, user_id: int, top_k: int = 5) -> list[SearchResult
         ).fetchall()
         return [
             SearchResult(
-                chunk_id=r[0], document_id=r[1], filename=r[3],
-                snippet=r[2][:200], score=float(r[4]),
+                chunk_id=r[0],
+                document_id=r[1],
+                filename=r[3],
+                snippet=r[2][:200],
+                score=float(r[4]),
             )
             for r in rows
         ]
@@ -180,8 +185,11 @@ def recent_documents(user_id: int, limit: int = 20) -> list[dict]:
         ).fetchall()
     return [
         {
-            "document_id": r[0], "filename": r[1], "mime_type": r[2],
-            "received_at": r[3].isoformat() if r[3] else None, "sender": r[4],
+            "document_id": r[0],
+            "filename": r[1],
+            "mime_type": r[2],
+            "received_at": r[3].isoformat() if r[3] else None,
+            "sender": r[4],
         }
         for r in rows
     ]
