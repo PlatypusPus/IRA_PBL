@@ -1,0 +1,14 @@
+GitHub Profile README Guide - For Recruiters and Students
+Shared by the Placement Cell, March 2026
+
+A strong GitHub profile helps recruiters assess your work quickly. Tips to improve your profile:
+
+- Pin 4-6 repositories that showcase different skills (web, data, systems)
+- Write a profile README with a short bio, skills, and contact links
+- Add meaningful README files to each project with screenshots and setup steps
+- Use consistent commit messages and show green contribution activity
+- Include prompts and project descriptions that explain what you built and why
+
+Recruiters often filter by GitHub activity before shortlisting. Keep your profile updated before the internship season. Example prompts to improve your profile: "Add a demo GIF", "Write a one-line impact statement", "Link your deployed project".
+
+For help, visit the placement cell on Thursdays 3-5 PM.

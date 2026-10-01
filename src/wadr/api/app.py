@@ -8,10 +8,12 @@ says which linked number a message arrived on via its session_key.
 """
 
 import io
+import logging
 import os
 from dataclasses import asdict
 from pathlib import Path
 
+import psycopg
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,7 +22,10 @@ from wadr import accounts
 from wadr.api import bridge_client
 from wadr.chat import NotYours, answer, conversations, history, start
 from wadr.chat import delete as delete_conversation
+from wadr.db import get_conn
 from wadr.retrieval import service
+
+log = logging.getLogger(__name__)
 
 app = FastAPI(title="WADR")
 
@@ -28,6 +33,17 @@ SESSION_COOKIE = "wadr_session"
 # The bridge is a trusted internal process, not a user. Empty means "no bridge
 # may call in", which is the safe default if the operator forgets to set it.
 BRIDGE_TOKEN = os.environ.get("WADR_BRIDGE_TOKEN", "")
+
+
+@app.get("/health")
+def health() -> dict:
+    try:
+        with get_conn() as conn:
+            conn.execute("SELECT 1")
+        return {"status": "ok"}
+    except psycopg.OperationalError as e:
+        log.warning("db unreachable: %s", e)
+        return {"status": "degraded", "detail": "database unreachable"}
 
 
 def current_user(wadr_session: str | None = Cookie(default=None)) -> dict:
@@ -47,8 +63,9 @@ def require_bridge(x_bridge_token: str | None = Header(default=None)) -> None:
 
 def _set_session(response: Response, token: str) -> None:
     response.set_cookie(
-        SESSION_COOKIE, token,
-        httponly=True,   # JavaScript must never be able to read the session token
+        SESSION_COOKIE,
+        token,
+        httponly=True,  # JavaScript must never be able to read the session token
         samesite="lax",  # blocks the cross-site form-post CSRF shape
         max_age=accounts.SESSION_DAYS * 86400,
         path="/",
@@ -223,8 +240,7 @@ def download(document_id: int, inline: bool = False, user: dict = Depends(curren
         io.BytesIO(content),
         media_type=mime_type,
         headers={
-            "Content-Disposition":
-                f'{"inline" if inline else "attachment"}; filename="{filename}"',
+            "Content-Disposition": f'{"inline" if inline else "attachment"}; filename="{filename}"',
             # These bytes never change - the id is a content hash's document.
             "Cache-Control": "private, max-age=3600",
         },
@@ -243,6 +259,9 @@ def bridge_document(payload: dict) -> dict:
         return OpenWAAdapter().handle_webhook(payload)
     except (KeyError, ValueError) as e:
         raise HTTPException(400, f"bad payload: {e!r}") from e
+    except psycopg.OperationalError as e:
+        log.warning("bridge document db error: %s", e)
+        raise HTTPException(503, "database unreachable") from e
 
 
 @app.post("/api/bridge/status", dependencies=[Depends(require_bridge)])
@@ -260,7 +279,11 @@ def bridge_query(payload: dict) -> dict:
     """A '/find ...' message typed in WhatsApp itself."""
     from wadr.adapters.openwa import OpenWAAdapter
 
-    OpenWAAdapter().handle_query(payload)
+    try:
+        OpenWAAdapter().handle_query(payload)
+    except psycopg.OperationalError as e:
+        log.warning("bridge query db error: %s", e)
+        raise HTTPException(503, "database unreachable") from e
     return {}
 
 
@@ -268,7 +291,11 @@ def bridge_query(payload: dict) -> dict:
 def bridge_get(payload: dict) -> dict:
     from wadr.adapters.openwa import OpenWAAdapter
 
-    OpenWAAdapter().handle_get(payload)
+    try:
+        OpenWAAdapter().handle_get(payload)
+    except psycopg.OperationalError as e:
+        log.warning("bridge get db error: %s", e)
+        raise HTTPException(503, "database unreachable") from e
     return {}
 
 
@@ -286,6 +313,7 @@ if (WEB_DIST / "index.html").exists():
         return FileResponse(WEB_DIST / "index.html")
 
 else:
+
     @app.get("/")
     def no_build() -> dict:
         return {

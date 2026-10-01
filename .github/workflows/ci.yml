@@ -1,0 +1,39 @@
+name: ci
+on:
+  push:
+    branches: [main, product]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: wadr
+          POSTGRES_PASSWORD: wadr
+          POSTGRES_DB: wadr
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U wadr"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --group dev
+      - run: sudo apt-get update && sudo apt-get install -y tesseract-ocr ffmpeg
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run wadr migrate
+        env:
+          WADR_DATABASE_URL: postgresql://wadr:wadr@localhost:5433/wadr
+      - run: uv run wadr ingest ./sample_docs
+        env:
+          WADR_DATABASE_URL: postgresql://wadr:wadr@localhost:5433/wadr
+      - run: uv run pytest -q
+        env:
+          WADR_DATABASE_URL: postgresql://wadr:wadr@localhost:5433/wadr
